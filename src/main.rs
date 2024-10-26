@@ -1,4 +1,6 @@
+mod common;
 mod model;
+mod server;
 
 use anyhow::{bail, Context, Result};
 use std::{
@@ -145,6 +147,8 @@ fn calculate_delta(file: &mut File, serialized_signature: Vec<u8>) -> Result<(Ve
     Ok((delta_buf, file_len))
 }
 
+// ALLOW IT MATE
+#[allow(dead_code)]
 fn apply_delta(file: &mut File, delta: Vec<u8>, new_file_len: u64) -> Result<()> {
     let (file_contents, _) = extract_file_contents(file)?;
 
