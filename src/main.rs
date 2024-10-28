@@ -23,10 +23,9 @@ fn main() {
     let mut old_file = File::options()
         .read(true)
         .write(true)
-        // .open("test.txt")
-        // .open("test-smaller.txt")
-        // .open("/home/r3dlust/Downloads/archlinux-2024.10.01-x86_64.iso.copy")
-        .open("bigfile.txt")
+        .open("test/data/small/old.txt")
+        // .open("test/data/medium/old.txt")
+        // .open("test/data/big/old.txt")
         .unwrap();
     let (signature_encoded, predicted_block_size) =
         calculate_signature(&mut old_file, &mut predictor).unwrap();
@@ -46,10 +45,9 @@ fn main() {
 
     let mut new_file = File::options()
         .read(true)
-        // .open("test-new.txt")
-        // .open("test-smaller-new.txt")
-        // .open("/home/r3dlust/Downloads/archlinux-2024.10.01-x86_64.iso")
-        .open("bigfile-new.txt")
+        .open("test/data/small/new.txt")
+        // .open("test/data/medium/new.txt")
+        // .open("test/data/big/new.txt")
         .unwrap();
 
     let (delta, new_file_len) = calculate_delta(&mut new_file, signature_encoded).unwrap();
