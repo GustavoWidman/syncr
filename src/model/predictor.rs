@@ -224,25 +224,18 @@ impl BlockSizePredictor {
             }
         }
 
-        // truly too much room to wonder
-        if wonder_up && wonder_down {
-            if rand::random() {
-                return (wonder_up_value, true);
-            } else {
-                return (wonder_down_value, true);
+        return match (wonder_up, wonder_down) {
+            (true, true) => {
+                if rand::random() {
+                    (wonder_up_value, true)
+                } else {
+                    (wonder_down_value, true)
+                }
             }
-        }
-
-        if wonder_up {
-            return (wonder_up_value, true);
-        }
-
-        if wonder_down {
-            return (wonder_down_value, true);
-        }
-
-        // no room for wonder :(
-        return (currently_predicted_size, false);
+            (true, false) => (wonder_up_value, true),
+            (false, true) => (wonder_down_value, true),
+            (false, false) => (currently_predicted_size, false),
+        };
     }
 
     fn dedup_training_data(&self) -> Vec<(u64, u32, f32)> {
