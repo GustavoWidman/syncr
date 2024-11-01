@@ -6,15 +6,15 @@ use std::{
 };
 
 pub struct NoiseEncoder {
-    PARAMS: NoiseParams,
-    SECRET: Vec<u8>,
+    params: NoiseParams,
+    secret: Vec<u8>,
 }
 
 impl NoiseEncoder {
     pub fn new(secret: &[u8], params: &str) -> Self {
         Self {
-            PARAMS: params.parse().unwrap(),
-            SECRET: secret.to_vec(),
+            params: params.parse().unwrap(),
+            secret: secret.to_vec(),
         }
     }
 
@@ -41,11 +41,11 @@ impl NoiseEncoder {
         &mut self,
         stream: &mut TcpStream,
     ) -> Result<TransportState, Error> {
-        let builder = Builder::new(self.PARAMS.clone());
+        let builder = Builder::new(self.params.clone());
         let static_key = builder.generate_keypair().unwrap().private;
         let mut noise = builder
             .local_private_key(&static_key)
-            .psk(3, self.SECRET.as_slice())
+            .psk(3, self.secret.as_slice())
             .build_responder()
             .unwrap();
 
@@ -72,11 +72,11 @@ impl NoiseEncoder {
         &mut self,
         stream: &mut TcpStream,
     ) -> Result<TransportState, Error> {
-        let builder = Builder::new(self.PARAMS.clone());
+        let builder = Builder::new(self.params.clone());
         let static_key = builder.generate_keypair().unwrap().private;
         let mut noise = builder
             .local_private_key(&static_key)
-            .psk(3, self.SECRET.as_slice())
+            .psk(3, self.secret.as_slice())
             .build_initiator()
             .unwrap();
 
