@@ -1,3 +1,4 @@
+pub mod noise;
 mod packet;
 pub mod packets;
 
@@ -7,4 +8,5 @@ pub enum Packets {
 }
 
 // exports
+pub(crate) use packet::find_packet_type;
 pub(crate) use packet::Packet;

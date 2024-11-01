@@ -1,9 +1,13 @@
+#![allow(dead_code)]
+
+mod client;
 mod common;
 mod model;
 mod server;
 
 use anyhow::{bail, Context, Result};
 use std::{
+    env,
     fs::File,
     io::{Read, Seek},
 };
@@ -13,6 +17,31 @@ use fast_rsync::{apply, diff, Signature, SignatureOptions};
 use model::BlockSizePredictor;
 
 fn main() {
+    // read environment variable MODE
+    let mode = env::var("MODE").unwrap_or("server".to_string());
+
+    match mode.as_str() {
+        "server" => server_main(),
+        "client" => client_main(),
+        "sync" => sync_main(),
+        _ => panic!("Invalid mode specified"),
+    }
+}
+
+fn client_main() {
+    let mut client = client::Client::connect("127.0.0.1:8123");
+
+    client.authenticate("admin", "admin");
+
+    client.run()
+}
+
+fn server_main() {
+    let mut server = server::Server::bind(8123);
+    server.run();
+}
+
+fn sync_main() {
     use std::time::Instant;
 
     //? RUNNING SERVER SIDE
