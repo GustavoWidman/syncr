@@ -1,7 +1,5 @@
 use std::io;
 
-use super::packets::auth::AuthenticationPacket;
-
 pub trait Packet {
     type BuildParams;
     fn build(params: Self::BuildParams) -> Self;

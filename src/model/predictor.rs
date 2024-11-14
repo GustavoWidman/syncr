@@ -26,30 +26,28 @@ pub struct BlockSizePredictor {
 }
 
 impl BlockSizePredictor {
-    pub fn initialize(model_file: String) -> Self {
+    pub fn initialize(model_file: String) -> Result<Self, anyhow::Error> {
         if Path::new(&model_file).exists() {
             // Load the predictor from the file
-            let mut file = File::open(&model_file).expect("Unable to open the model file.");
+            let mut file = File::open(&model_file)?;
             let mut contents = String::new();
-            file.read_to_string(&mut contents)
-                .expect("Unable to read the model file.");
+            file.read_to_string(&mut contents)?;
 
-            let mut model: BlockSizePredictor =
-                serde_json::from_str(&contents).expect("Error deserializing the model.");
+            let mut model: BlockSizePredictor = serde_json::from_str(&contents)?;
 
             // super edge case, should never happen realistically
             if model.model_file != model_file {
                 model.model_file = model_file;
             }
 
-            model
+            Ok(model)
         } else {
             // Create a new predictor with empty model and data
-            BlockSizePredictor {
+            Ok(BlockSizePredictor {
                 model: None,
                 model_file,
                 data: Vec::new(),
-            }
+            })
         }
     }
 

@@ -1,38 +1,101 @@
-use std::{net::TcpListener, thread};
+use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::sync::{Arc, Mutex};
 
 use super::config::{PARAMS, SECRET};
 use super::handlers::Client;
-use crate::common::noise::{handshake_server, Transport};
-
+use crate::common::crypto::SecureStream;
+use crate::model::{self, BlockSizePredictor};
+use anyhow::anyhow;
+use dirs::home_dir;
+use futures::{FutureExt, TryFutureExt};
+use rustls::pki_types::pem::PemObject;
+use rustls::pki_types::pem::SectionKind;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use rustls::ServerConfig;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::{TcpListener, TcpStream};
+use tokio_rustls::server::TlsStream;
+use tokio_rustls::TlsAcceptor;
 pub struct Server {
     listener: TcpListener,
-    clients: Vec<Client>,
+    clients: Arc<Mutex<HashMap<SocketAddr, Client>>>,
+    predictor: Arc<Mutex<BlockSizePredictor>>,
 }
 
 impl Server {
-    pub fn bind(port: u16) -> Self {
-        let listener = TcpListener::bind(format!("127.0.0.1:{port}")).expect("Failed to bind");
+    pub async fn bind(port: u16) -> Result<Self, anyhow::Error> {
+        let listener = TcpListener::bind("127.0.0.1:7878").await?;
+        println!("Server listening on 127.0.0.1:7878");
 
-        println!("Listening on http://127.0.0.1:{port}");
+        let predictor = model::initialize!("model.json")?;
 
-        Self {
+        Ok(Self {
             listener,
-            clients: Vec::new(),
-        }
+            predictor: Arc::new(Mutex::new(predictor)),
+            clients: Arc::new(Mutex::new(HashMap::new())),
+        })
     }
 
-    pub fn run(&mut self) {
-        for stream in self.listener.incoming() {
-            match stream {
-                Ok(mut stream) => {
-                    println!("New connection from {}", stream.peer_addr().unwrap());
-                    let noise = handshake_server!(SECRET, PARAMS, &mut stream).unwrap();
+    async fn accept(&mut self) -> Result<(SecureStream, SocketAddr), anyhow::Error> {
+        let (stream, addr) = self.listener.accept().await?;
 
-                    let transport = Transport::new(stream, noise);
-                    let handle = thread::spawn(move || {
-                        Client::handle(transport);
+        let mut stream = SecureStream::new(stream).await?;
+
+        Ok((stream, addr))
+    }
+
+    fn insert_client(&self, addr: SocketAddr, client: Client) -> Result<(), anyhow::Error> {
+        if self
+            .clients
+            .lock()
+            .map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?
+            .insert(addr, client)
+            .is_some()
+        {
+            return Err(anyhow::anyhow!("Client already exists"));
+        }
+
+        Ok(())
+    }
+
+    pub async fn run(&mut self) {
+        loop {
+            match self.accept().await {
+                Ok((mut stream, addr)) => {
+                    println!("New connection from {}", addr.to_string());
+
+                    let handle = tokio::spawn(async move { Client::handle(stream).await });
+
+                    match self.insert_client(addr, Client::new(handle.abort_handle())) {
+                        Ok(_) => println!("Client inserted"),
+                        Err(e) => {
+                            eprintln!("Client insertion failed: {e}");
+                            handle.abort();
+                            println!("{:?}", self.clients.lock().unwrap().len());
+                            println!("Client aborted");
+                            continue;
+                        }
+                    }
+
+                    let clients = self.clients.clone();
+                    let addr = Arc::new(addr);
+                    let cleanup = handle.then(|result| async move {
+                        // move clone of clients in
+
+                        // todo remove unwraps
+                        clients.lock().unwrap().remove(&addr).unwrap();
+
+                        match result {
+                            Ok(_) => println!("Client disconnected"),
+                            Err(e) => eprintln!("Client disconnected: {e}"),
+                        }
+
+                        // print all clients
+                        println!("Clients: {:?}", clients.lock().unwrap().len());
                     });
-                    self.clients.push(Client::new(handle))
+
+                    tokio::spawn(async move { cleanup.await });
                 }
                 Err(e) => {
                     eprintln!("Connection failed: {e}");

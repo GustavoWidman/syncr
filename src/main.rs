@@ -6,48 +6,115 @@ mod model;
 mod server;
 
 use anyhow::{bail, Context, Result};
+use fast_rsync::{apply, diff, Signature, SignatureOptions};
+use ignore::WalkBuilder;
+use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{
     env,
-    fs::File,
+    ffi::OsStr,
+    fs::{self, File},
+    future,
     io::{Read, Seek},
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, RwLock},
+    thread::panicking,
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    task,
+    time::Instant,
 };
 
-use fast_rsync::{apply, diff, Signature, SignatureOptions};
-
+use common::crypto::SecureStream;
+use common::sync;
 use model::BlockSizePredictor;
 
-fn main() {
+#[tokio::main]
+async fn main() {
     // read environment variable MODE
-    let mode = env::var("MODE").unwrap_or("server".to_string());
-
-    match mode.as_str() {
-        "server" => server_main(),
-        "client" => client_main(),
-        "sync" => sync_main(),
-        _ => panic!("Invalid mode specified"),
+    match env::var("MODE") {
+        Ok(mode) => match mode.to_lowercase().as_str() {
+            "server" => server_main().await,
+            "client" => client_main().await,
+            "watch" => watch_main().await,
+            "sync" => sync_main().await,
+            _ => panic!("Invalid mode specified"),
+        },
+        Err(_) => sync_main().await,
     }
 }
 
-fn client_main() {
-    let mut client = client::Client::connect("127.0.0.1:8123");
+async fn watch_main() {
+    let start_dirs = vec![dirs::home_dir().expect("Unable to get home directory")];
 
-    client.authenticate("admin", "admin");
+    let start = Instant::now();
+    let paths = RwLock::new(Vec::new());
 
-    client.run()
+    start_dirs.into_par_iter().for_each(|dir| {
+        let walker = WalkBuilder::new(dir)
+            .follow_links(true)
+            .hidden(false)
+            .filter_entry(|entry| {
+                let path = entry.path();
+                let file_name = path.file_name().unwrap().to_str().unwrap();
+                (path.is_dir() && !file_name.starts_with("."))
+                    || (path.is_file() && file_name == ".sync")
+            })
+            .build_parallel();
+
+        walker.run(|| {
+            let paths = &paths;
+            Box::new(move |result| {
+                if let Ok(entry) = result {
+                    if entry.path().is_file()
+                        && entry.path().file_name() == Some(OsStr::new(".sync"))
+                    {
+                        let mut paths_guard = paths.write().unwrap(); // Acquire write lock
+                        paths_guard.push(entry.into_path());
+                    }
+                }
+
+                ignore::WalkState::Continue
+            })
+        });
+    });
+
+    let elapsed = start.elapsed();
+    // let paths = Arc::try_unwrap(paths)
+    //     .expect("Arc unwrap failed")
+    //     .into_inner()
+    //     .unwrap();
+    let paths = paths.into_inner().unwrap();
+
+    println!("Found {} .sync files in {:?}", paths.len(), elapsed);
+    if paths.is_empty() {
+        println!("No .sync files found.");
+    } else {
+        for path in paths {
+            println!("Found .sync file at: {:?}", path);
+        }
+    }
 }
 
-fn server_main() {
-    let mut server = server::Server::bind(8123);
-    server.run();
+async fn client_main() {
+    let mut client = client::Client::connect("127.0.0.1:8123").await.unwrap();
+
+    client.run().await;
 }
 
-fn sync_main() {
+async fn server_main() {
+    let mut server = server::Server::bind(8123).await.unwrap();
+    server.run().await;
+}
+
+async fn sync_main() {
     use std::time::Instant;
 
     //? RUNNING SERVER SIDE
     let server_start = Instant::now();
 
-    let mut predictor = model::initialize!("model.json");
+    let mut predictor = model::initialize!("model.json").expect("Failed to initialize model");
 
     let mut old_file = File::options()
         .read(true)
@@ -57,7 +124,7 @@ fn sync_main() {
         // .open("test/data/big/old.txt")
         .unwrap();
     let (signature_encoded, predicted_block_size) =
-        calculate_signature(&mut old_file, &mut predictor).unwrap();
+        sync::calculate_signature(&mut old_file, &mut predictor).unwrap();
     println!("Used block size: {}", predicted_block_size);
     let signature_encoded_len = signature_encoded.len();
 
@@ -79,7 +146,7 @@ fn sync_main() {
         // .open("test/data/big/new.txt")
         .unwrap();
 
-    let (delta, new_file_len) = calculate_delta(&mut new_file, signature_encoded).unwrap();
+    let (delta, new_file_len) = sync::calculate_delta(&mut new_file, signature_encoded).unwrap();
 
     let client_elapsed = client_start.elapsed();
 
@@ -120,94 +187,4 @@ fn sync_main() {
         new_file_len,
         compression_rate.round(),
     );
-}
-
-fn calculate_signature(
-    file: &mut File,
-    predictor: &mut BlockSizePredictor,
-) -> Result<(Vec<u8>, u32)> {
-    let (file_contents, file_len) = extract_file_contents(file)?;
-
-    let predicted_block_size = predictor.predict(file_len);
-    let (wondered_value, has_wondered) = predictor.wonder(file_len);
-
-    if has_wondered {
-        println!(
-            "predictor wondered if the value {:?} might be better instead when faced with the question {:?}",
-            wondered_value, file_len
-        );
-    } else {
-        println!(
-            "predictor has concluded and pondered upon that {:?} is the absolute best value for {:?}",
-            predicted_block_size, file_len
-        );
-    }
-
-    //* temporary replacement for testing :)
-    // let predicted_block_size = 4096;
-
-    let options = SignatureOptions {
-        block_size: predicted_block_size,
-        crypto_hash_size: 8,
-    };
-
-    Ok((
-        Signature::calculate(&file_contents, options).into_serialized(),
-        predicted_block_size,
-    ))
-}
-
-fn calculate_delta(file: &mut File, serialized_signature: Vec<u8>) -> Result<(Vec<u8>, u64)> {
-    let deserialized = Signature::deserialize(serialized_signature.into())
-        .context("Failed to deserialize signature")?;
-    let signature = deserialized.index();
-
-    let (file_contents, file_len) = extract_file_contents(file)?;
-
-    let mut delta_buf = Vec::new(); // dynamically allocated
-    delta_buf
-        .try_reserve(file_len as usize)
-        .context("Failed to allocate memory for delta buffer")?;
-
-    diff(&signature, &file_contents, &mut delta_buf).context("Failed to calculate delta")?;
-
-    Ok((delta_buf, file_len))
-}
-
-// ALLOW IT MATE
-#[allow(dead_code)]
-fn apply_delta(file: &mut File, delta: Vec<u8>, new_file_len: u64) -> Result<()> {
-    let (file_contents, _) = extract_file_contents(file)?;
-
-    file.seek(std::io::SeekFrom::Start(0))
-        .context("Failed to seek to start of file")?;
-    file.set_len(new_file_len)
-        .context("Failed to set file length")?;
-    apply(&file_contents, &delta, file).context("Failed to apply delta")?;
-
-    Ok(())
-}
-
-fn extract_file_contents(file: &mut File) -> Result<(Vec<u8>, u64)> {
-    let file_len = file
-        .metadata()
-        .context("Failed to get file metadata")?
-        .len();
-
-    if file_len > usize::MAX as u64 {
-        bail!("File is too large to process on this system!");
-    }
-
-    //? This is about the most we can do to avoid OOM errors since
-    //? the fast_rsync crate works with buffers and not readers (terrible practice)
-    let mut file_contents = Vec::with_capacity(file_len as usize);
-    file_contents
-        .try_reserve(file_len as usize)
-        .context("Failed to allocate memory for file contents")?;
-    file.seek(std::io::SeekFrom::Start(0))
-        .context("Failed to seek to start of file")?;
-    file.read_to_end(&mut file_contents)
-        .context("Failed to read file contents")?;
-
-    Ok((file_contents, file_len))
 }

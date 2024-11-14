@@ -1,9 +1,11 @@
-pub mod noise;
+pub mod crypto;
 mod packet;
 pub mod packets;
+pub mod sync;
 
 pub enum Packets {
-    Authentication(packets::auth::AuthenticationPacket),
+    // Authentication(packets::auth::AuthenticationPacket),
+    Salt(packets::salt::SaltPacket),
     // Data(DataPacket),
 }
 

@@ -1,43 +1,36 @@
-use std::thread::JoinHandle;
-
-use crate::common::{
-    find_packet_type, noise::Transport, packets::auth::AuthenticationPacket, Packet,
+use futures::{FutureExt, TryFutureExt};
+use tokio::{
+    io::AsyncReadExt,
+    task::{AbortHandle, JoinHandle},
 };
 
+use crate::common::{crypto::SecureStream, find_packet_type, Packet};
+
 pub struct Client {
-    handle: JoinHandle<()>,
+    handle: AbortHandle,
 }
 
 impl Client {
-    pub fn new(handle: JoinHandle<()>) -> Self {
+    pub fn new(handle: AbortHandle) -> Self {
         Client { handle }
     }
 
-    pub fn handle(mut transport: Transport) {
+    pub async fn handle(mut stream: SecureStream) -> Result<(), anyhow::Error> {
         let mut buffer = [0; 4096];
         loop {
-            match transport.recv(&mut buffer) {
-                Ok(0) => break,
+            match stream.read(&mut buffer).await {
+                Ok(0) => return Ok(()),
                 Ok(1..4) => continue,
                 Ok(n) => {
                     let (packet_type, bytes) = find_packet_type(&buffer[..n]).unwrap();
 
-                    println!("Received packet: {:?}", packet_type);
-
-                    let packet = match packet_type {
-                        "AUTH" => AuthenticationPacket::from_bytes(bytes),
-                        _ => panic!("Invalid packet type"),
-                    };
-
-                    println!("Received packet: {:?}", packet);
+                    println!("Received packet type: {:?}", packet_type);
+                    println!("Received packet: {:?}", std::str::from_utf8(&bytes));
                 }
                 Err(e) => {
-                    eprintln!("Failed to read from stream: {:?}", e);
-                    break;
+                    return Err(e.into());
                 }
             }
         }
-
-        println!("Client disconnected");
     }
 }
