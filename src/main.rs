@@ -4,6 +4,7 @@ mod client;
 mod common;
 mod model;
 mod server;
+mod utils;
 
 use anyhow::{bail, Context, Result};
 use fast_rsync::{apply, diff, Signature, SignatureOptions};

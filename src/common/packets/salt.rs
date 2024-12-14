@@ -1,11 +1,7 @@
-use std::io::Write;
-
 use rand::{rngs::OsRng, RngCore};
-use ring::rand::SystemRandom;
 use serde::{Deserialize, Serialize};
 
-use super::super::Packet;
-
+use super::{super::Packet, size::SizePacket};
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SaltPacket {
     pub salt: [u8; 12],
@@ -29,14 +25,10 @@ impl Packet for SaltPacket {
         b"SALT"
     }
 
-    fn from_bytes(bytes: &[u8]) -> Self {
-        serde_json::from_slice(&bytes).expect("Failed to deserialize")
-    }
+    fn make_buffer(_: &Option<SizePacket>) -> Result<Vec<u8>, anyhow::Error> {
+        let mut serialized_size =
+            bincode::serialized_size(&SaltPacket::build(([0u8; 12]))).unwrap() as usize;
 
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut buf = Vec::new();
-        buf.write_all(b"SALT").unwrap();
-        serde_json::to_writer(&mut buf, self).expect("Failed to serialize");
-        buf
+        Ok(Vec::with_capacity(serialized_size))
     }
 }

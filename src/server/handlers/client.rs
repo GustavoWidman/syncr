@@ -4,7 +4,9 @@ use tokio::{
     task::{AbortHandle, JoinHandle},
 };
 
-use crate::common::{crypto::SecureStream, find_packet_type, Packet};
+use crate::common::{
+    crypto::SecureStream, make_packet_buffer, packetize, packets::size::SizePacket, Packet, Packets,
+};
 
 pub struct Client {
     handle: AbortHandle,
@@ -16,21 +18,58 @@ impl Client {
     }
 
     pub async fn handle(mut stream: SecureStream) -> Result<(), anyhow::Error> {
-        let mut buffer = [0; 4096];
+        let mut last_size_packet: Option<SizePacket> = None;
         loop {
-            match stream.read(&mut buffer).await {
-                Ok(0) => return Ok(()),
-                Ok(1..4) => continue,
-                Ok(n) => {
-                    let (packet_type, bytes) = find_packet_type(&buffer[..n]).unwrap();
+            let mut header_buffer = [0; 4];
+            match stream.read_exact(&mut header_buffer).await {
+                Ok(_) => {
+                    let packet = match make_packet_buffer(&header_buffer, &last_size_packet) {
+                        Ok(mut buffer) => {
+                            Client::read_packet(&mut stream, &mut buffer).await?;
+                            let packet = packetize(&header_buffer, buffer)?;
 
-                    println!("Received packet type: {:?}", packet_type);
-                    println!("Received packet: {:?}", std::str::from_utf8(&bytes));
+                            // prepare for a dynsized packet
+                            if let Packets::Size(packet) = packet {
+                                last_size_packet = Some(packet);
+                                continue;
+                            } else {
+                                last_size_packet = None;
+                            }
+
+                            packet
+                        }
+                        Err(e) => {
+                            println!("Error: {:?}", e);
+                            return Err(e.into());
+                        }
+                    };
+
+                    println!("Packet: {:?}", packet);
+                    match packet {
+                        Packets::Sanity(packet) => {
+                            println!(
+                                "Received sanity packet. Message: {:?}",
+                                std::str::from_utf8(&packet.message)?
+                            );
+                        }
+                        _ => {}
+                    };
+
+                    continue;
                 }
                 Err(e) => {
+                    println!("Error: {:?}", e);
                     return Err(e.into());
                 }
             }
         }
+    }
+
+    pub async fn read_packet(
+        stream: &mut SecureStream,
+        packet_buffer: &mut Vec<u8>,
+    ) -> Result<(), anyhow::Error> {
+        stream.read_buf(packet_buffer).await?;
+        Ok(())
     }
 }

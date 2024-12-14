@@ -36,8 +36,10 @@ impl AsyncWrite for SecureStream {
 
     fn poll_shutdown(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         // Properly close the connection by shutting down the stream
+
         let future = async {
-            self.stream
+            let mut stream = self.stream.lock().await;
+            stream
                 .shutdown()
                 .await
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))
