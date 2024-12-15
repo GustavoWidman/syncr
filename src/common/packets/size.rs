@@ -1,15 +1,18 @@
 use rand::{rngs::OsRng, RngCore};
 use serde::{Deserialize, Serialize};
 
+use crate::common::packet::PacketBase;
+
 use super::super::Packet;
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 pub struct SizePacket {
     pub packet_size: u64,
 }
 
 // This is a packet that is sent before dynamically sized packets
 // It is used to determine the size of the packet
-impl Packet for SizePacket {
+impl PacketBase for SizePacket {
+    const TYPE: &'static [u8; 4] = b"SIZE";
     type BuildParams = u64;
 
     fn build(params: Self::BuildParams) -> Self {
@@ -17,14 +20,6 @@ impl Packet for SizePacket {
             packet_size: params,
         }
     }
-
-    fn get_type(&self) -> &[u8; 4] {
-        b"SIZE"
-    }
-
-    fn make_buffer(_: &Option<SizePacket>) -> Result<Vec<u8>, anyhow::Error> {
-        let mut serialized_size = bincode::serialized_size(&SizePacket::build(0)).unwrap() as usize;
-
-        Ok(Vec::with_capacity(serialized_size))
-    }
 }
+
+impl Packet for SizePacket {}

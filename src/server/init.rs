@@ -4,19 +4,19 @@ use std::sync::{Arc, Mutex};
 
 use super::config::{PARAMS, SECRET};
 use super::handlers::Client;
-use crate::common::crypto::SecureStream;
+use crate::common::stream::SecureStream;
 use crate::model::{self, BlockSizePredictor};
 use anyhow::anyhow;
 use dirs::home_dir;
 use futures::{FutureExt, TryFutureExt};
+use rustls::ServerConfig;
 use rustls::pki_types::pem::PemObject;
 use rustls::pki_types::pem::SectionKind;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use rustls::ServerConfig;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
-use tokio_rustls::server::TlsStream;
 use tokio_rustls::TlsAcceptor;
+use tokio_rustls::server::TlsStream;
 pub struct Server {
     listener: TcpListener,
     clients: Arc<Mutex<HashMap<SocketAddr, Client>>>,

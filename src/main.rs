@@ -6,8 +6,8 @@ mod model;
 mod server;
 mod utils;
 
-use anyhow::{bail, Context, Result};
-use fast_rsync::{apply, diff, Signature, SignatureOptions};
+use anyhow::{Context, Result, bail};
+use fast_rsync::{Signature, SignatureOptions, apply, diff};
 use ignore::WalkBuilder;
 use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{
@@ -27,7 +27,7 @@ use tokio::{
     time::Instant,
 };
 
-use common::crypto::SecureStream;
+use common::stream::SecureStream;
 use common::sync;
 use model::BlockSizePredictor;
 

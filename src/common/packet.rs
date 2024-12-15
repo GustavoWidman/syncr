@@ -5,21 +5,23 @@ use std::{
 
 use tokio::{
     io::{AsyncWrite, AsyncWriteExt},
-    sync::{mpsc, Mutex},
+    sync::{Mutex, mpsc},
 };
 
 use super::{
-    packets::{self, size::SizePacket},
     Packets,
+    packets::{self, sanity::SanityPacket, size::SizePacket},
 };
 
-pub trait Packet: serde::Serialize + serde::de::DeserializeOwned + Send + Sync + 'static {
+pub trait PacketBase:
+    serde::Serialize + serde::de::DeserializeOwned + Send + Sync + Default + 'static
+{
     type BuildParams;
+    const TYPE: &'static [u8; 4];
+
     fn build(params: Self::BuildParams) -> Self;
-    fn get_type(&self) -> &[u8; 4];
-    fn make_buffer(size: &Option<SizePacket>) -> Result<Vec<u8>, anyhow::Error>;
-    fn get_size(&self) -> Option<SizePacket> {
-        None
+    fn get_type(&self) -> &[u8; 4] {
+        Self::TYPE
     }
 
     fn from_bytes(bytes: &[u8]) -> Self {
@@ -33,88 +35,88 @@ pub trait Packet: serde::Serialize + serde::de::DeserializeOwned + Send + Sync +
         buf
     }
 
-    fn arc(self) -> Arc<Self> {
-        Arc::new(self)
+    // fn arc(self) -> Arc<Self> {
+    //     Arc::new(self)
+    // }
+}
+
+pub trait Packet: PacketBase {
+    async fn write(&self, stream: &mut (impl AsyncWrite + Unpin)) -> Result<(), anyhow::Error> {
+        write_packet(self, stream).await
     }
 
-    async fn write(
-        self: Arc<Self>,
-        stream: Arc<Mutex<(impl AsyncWriteExt + Unpin + Send + 'static)>>,
-    ) -> Result<usize, anyhow::Error> {
+    fn make_buffer() -> Result<Vec<u8>, anyhow::Error> {
+        let mut serialized_size = bincode::serialized_size(&Self::default())? as usize;
+        let mut buffer = Vec::with_capacity(serialized_size);
+        buffer.resize(serialized_size, 0);
+
+        Ok(buffer)
+    }
+}
+
+pub trait DynamicPacket: PacketBase {
+    async fn write(&self, stream: &mut (impl AsyncWrite + Unpin)) -> Result<(), anyhow::Error> {
+        let size_packet = self.get_size();
+
+        size_packet.write(stream).await?;
+
+        println!("Writing packet");
+
         write_packet(self, stream).await
+    }
+
+    fn get_size(&self) -> SizePacket {
+        SizePacket {
+            packet_size: bincode::serialized_size(&self).unwrap() as u64,
+        }
+    }
+    fn make_buffer(size: &SizePacket) -> Result<Vec<u8>, anyhow::Error> {
+        let capacity = size.packet_size as usize;
+        let mut buffer = Vec::with_capacity(capacity);
+        buffer.resize(capacity, 0);
+        Ok(buffer)
     }
 }
 
 pub async fn write_packet(
-    self_: Arc<impl Packet>,
-    stream: Arc<Mutex<(impl AsyncWriteExt + Unpin + Send + 'static)>>,
-) -> Result<usize, anyhow::Error> {
-    let (tx, mut rx) = mpsc::channel::<Vec<u8>>(4096);
+    self_: &(impl PacketBase),
+    stream: &mut (impl AsyncWrite + Unpin),
+) -> Result<(), anyhow::Error> {
+    let bytes = self_.to_bytes();
+    println!("Writing packet: {:?}", bytes);
+    stream.write_all(&bytes).await?;
+    stream.flush().await?;
 
-    // Spawn a blocking task to handle serialization
-    tokio::task::spawn_blocking(move || {
-        let mut buffer = Vec::new();
-        let mut writer = BufWriter::new(&mut buffer);
-
-        let self_clone = self_.clone();
-        writer.write_all(self_clone.get_type()).unwrap();
-        bincode::serialize_into(&mut writer, &*self_clone).unwrap();
-        writer.flush().unwrap();
-        drop(writer); // Drop the writer to release the borrow on buffer
-
-        tx.blocking_send(buffer).unwrap();
-    });
-
-    // Read from channel and write to async stream
-    let mut total_bytes = 0;
-    let mut stream = stream.lock().await;
-    while let Some(buffer) = rx.recv().await {
-        stream.write_all(&buffer).await?;
-        total_bytes += buffer.len();
-    }
-
-    Ok(total_bytes)
+    Ok(())
 }
 
-pub async fn write_dynsized_packet(
-    self_: Arc<impl Packet>,
-    stream: Arc<Mutex<(impl AsyncWriteExt + Unpin + Send + 'static)>>,
-) -> Result<usize, anyhow::Error> {
-    let size_packet = self_
-        .get_size()
-        .ok_or(anyhow::anyhow!(
-            "Missing size packet for dynamically sized packet \"{}\"",
-            std::str::from_utf8(self_.get_type())?
-        ))?
-        .arc();
-
-    size_packet.clone().write(stream.clone()).await?;
-
-    write_packet(self_, stream).await
+macro_rules! packet_buffer_mapper {
+    ($($static_packet:ident),* ; $($dynamic_packet:ident),*) => {
+        pub fn get_buffer_for_type(packet_type: &[u8; 4], size: &Option<SizePacket>) -> Result<Vec<u8>, anyhow::Error> {
+            match (packet_type, size) {
+                // Static packets (ignore size parameter)
+                $(
+                    ($static_packet::TYPE, _) => $static_packet::make_buffer(),
+                )*
+                // Dynamic packets (require size parameter)
+                $(
+                    ($dynamic_packet::TYPE, Some(size)) => <$dynamic_packet as crate::common::packet::DynamicPacket>::make_buffer(&size),
+                    ($dynamic_packet::TYPE, None) => panic!("Dynamic packet requires size parameter"),
+                )*
+                _ => panic!("Unknown packet type: {:?}", packet_type)
+            }
+        }
+    };
 }
 
-// yes i know this function is stupid... i dont know how else to do this...
-// todo: think of a better way to do this
-pub fn make_packet_buffer(
-    packet_type: &[u8; 4],
-    size: &Option<SizePacket>,
-) -> Result<Vec<u8>, anyhow::Error> {
-    let packet_type = std::str::from_utf8(packet_type)?;
-
-    match packet_type.to_uppercase().as_str() {
-        "SALT" => Ok(packets::salt::SaltPacket::make_buffer(size)?),
-        "SIZE" => Ok(packets::size::SizePacket::make_buffer(size)?),
-        "SNTY" => Ok(packets::sanity::SanityPacket::make_buffer(size)?),
-        _ => Err(anyhow::anyhow!("Invalid packet type")),
-    }
-}
+pub(super) use packet_buffer_mapper;
 
 pub fn packetize(packet_type: &[u8; 4], packet_buf: Vec<u8>) -> Result<Packets, anyhow::Error> {
     let packet_type = std::str::from_utf8(packet_type)?;
     let packet_type = packet_type.to_uppercase();
 
     match packet_type.as_str() {
-        "SALT" => Ok(Packets::Salt(packets::salt::SaltPacket::from_bytes(
+        "NONC" => Ok(Packets::Nonce(packets::nonce::NoncePacket::from_bytes(
             &packet_buf,
         ))),
         "SIZE" => Ok(Packets::Size(packets::size::SizePacket::from_bytes(
