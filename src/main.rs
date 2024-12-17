@@ -4,12 +4,9 @@ mod client;
 mod common;
 mod model;
 mod server;
-mod utils;
 
 use anyhow::{Context, Result, bail};
 use fast_rsync::{Signature, SignatureOptions, apply, diff};
-use ignore::WalkBuilder;
-use rayon::iter::{IntoParallelIterator, ParallelIterator};
 use std::{
     env,
     ffi::OsStr,
@@ -27,7 +24,7 @@ use tokio::{
     time::Instant,
 };
 
-use common::stream::SecureStream;
+use common::quick_config;
 use common::sync;
 use model::BlockSizePredictor;
 
@@ -47,65 +44,26 @@ async fn main() {
 }
 
 async fn watch_main() {
-    let start_dirs = vec![dirs::home_dir().expect("Unable to get home directory")];
+    let mut config = quick_config!("./syncr.toml").unwrap();
 
-    let start = Instant::now();
-    let paths = RwLock::new(Vec::new());
+    config.secret = "password".into();
 
-    start_dirs.into_par_iter().for_each(|dir| {
-        let walker = WalkBuilder::new(dir)
-            .follow_links(true)
-            .hidden(false)
-            .filter_entry(|entry| {
-                let path = entry.path();
-                let file_name = path.file_name().unwrap().to_str().unwrap();
-                (path.is_dir() && !file_name.starts_with("."))
-                    || (path.is_file() && file_name == ".sync")
-            })
-            .build_parallel();
+    config.save().unwrap();
 
-        walker.run(|| {
-            let paths = &paths;
-            Box::new(move |result| {
-                if let Ok(entry) = result {
-                    if entry.path().is_file()
-                        && entry.path().file_name() == Some(OsStr::new(".sync"))
-                    {
-                        let mut paths_guard = paths.write().unwrap(); // Acquire write lock
-                        paths_guard.push(entry.into_path());
-                    }
-                }
-
-                ignore::WalkState::Continue
-            })
-        });
-    });
-
-    let elapsed = start.elapsed();
-    // let paths = Arc::try_unwrap(paths)
-    //     .expect("Arc unwrap failed")
-    //     .into_inner()
-    //     .unwrap();
-    let paths = paths.into_inner().unwrap();
-
-    println!("Found {} .sync files in {:?}", paths.len(), elapsed);
-    if paths.is_empty() {
-        println!("No .sync files found.");
-    } else {
-        for path in paths {
-            println!("Found .sync file at: {:?}", path);
-        }
-    }
+    println!("{:?}", config);
+    return;
 }
 
 async fn client_main() {
-    let mut client = client::Client::connect("127.0.0.1:8123").await.unwrap();
+    let mut client_cfg = quick_config!("./client.toml").unwrap();
+    let mut client = client::Client::connect(Some(client_cfg)).await.unwrap();
 
     client.run().await;
 }
 
 async fn server_main() {
-    let mut server = server::Server::bind(8123).await.unwrap();
+    let mut server_cfg = quick_config!("./server.toml").unwrap();
+    let mut server = server::Server::bind(Some(server_cfg)).await.unwrap();
     server.run().await;
 }
 

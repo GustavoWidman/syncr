@@ -1,9 +1,9 @@
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 use serde::{Deserialize, Serialize};
 
-use crate::common::packet::{DynamicPacket, PacketBase};
+use super::{DynamicPacket, PacketBase};
 
-use super::{super::Packet, size::SizePacket};
+use super::{super::StaticPacket, size::SizePacket};
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct SanityPacket {
     pub message: Vec<u8>,

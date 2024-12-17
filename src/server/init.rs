@@ -2,36 +2,49 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
-use super::config::{PARAMS, SECRET};
 use super::handlers::Client;
+use crate::common::config::Config;
+use crate::common::config::structure::ModeConfig;
+use crate::common::quick_config;
 use crate::common::stream::SecureStream;
 use crate::model::{self, BlockSizePredictor};
-use anyhow::anyhow;
-use dirs::home_dir;
-use futures::{FutureExt, TryFutureExt};
-use rustls::ServerConfig;
-use rustls::pki_types::pem::PemObject;
-use rustls::pki_types::pem::SectionKind;
-use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use anyhow::{anyhow, bail};
+use futures::FutureExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream};
-use tokio_rustls::TlsAcceptor;
-use tokio_rustls::server::TlsStream;
+use tokio::net::TcpListener;
 pub struct Server {
     listener: TcpListener,
+    config: Config,
     clients: Arc<Mutex<HashMap<SocketAddr, Client>>>,
     predictor: Arc<Mutex<BlockSizePredictor>>,
 }
 
 impl Server {
-    pub async fn bind(port: u16) -> Result<Self, anyhow::Error> {
-        let listener = TcpListener::bind("127.0.0.1:7878").await?;
-        println!("Server listening on 127.0.0.1:7878");
+    pub async fn bind(config: Option<Config>) -> Result<Self, anyhow::Error> {
+        let config = match config {
+            Some(c) => c,
+            None => quick_config!()?,
+        };
+        let server_ref = config.as_server()?; // implicitly assert we're in server mode too!
+
+        let listener = TcpListener::bind((
+            server_ref.server().ip, //
+            server_ref.server().port,
+        ))
+        .await?;
+        println!(
+            "Server listening on {}:{}",
+            server_ref.server().ip,
+            server_ref.server().port
+        );
 
         let predictor = model::initialize!("model.json")?;
 
+        println!("Initialized predictor model");
+
         Ok(Self {
             listener,
+            config,
             predictor: Arc::new(Mutex::new(predictor)),
             clients: Arc::new(Mutex::new(HashMap::new())),
         })
@@ -40,7 +53,7 @@ impl Server {
     async fn accept(&mut self) -> Result<(SecureStream, SocketAddr), anyhow::Error> {
         let (stream, addr) = self.listener.accept().await?;
 
-        let mut stream = SecureStream::new(stream).await?;
+        let mut stream = SecureStream::new(stream, &self.config.secret).await?;
 
         Ok((stream, addr))
     }
@@ -95,7 +108,7 @@ impl Server {
                         println!("Clients: {:?}", clients.lock().unwrap().len());
                     });
 
-                    tokio::spawn(async move { cleanup.await });
+                    tokio::spawn(cleanup);
                 }
                 Err(e) => {
                     eprintln!("Connection failed: {e}");

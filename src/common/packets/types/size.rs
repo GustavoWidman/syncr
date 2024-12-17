@@ -1,9 +1,8 @@
-use rand::{rngs::OsRng, RngCore};
+use rand::{RngCore, rngs::OsRng};
 use serde::{Deserialize, Serialize};
 
-use crate::common::packet::PacketBase;
+use super::{PacketBase, StaticPacket};
 
-use super::super::Packet;
 #[derive(Serialize, Deserialize, Debug, Default)]
 pub struct SizePacket {
     pub packet_size: u64,
@@ -22,4 +21,4 @@ impl PacketBase for SizePacket {
     }
 }
 
-impl Packet for SizePacket {}
+impl StaticPacket for SizePacket {}
