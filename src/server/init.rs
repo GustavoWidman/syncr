@@ -1,3 +1,4 @@
+use sea_orm::*;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
@@ -7,7 +8,10 @@ use crate::common::config::Config;
 use crate::common::config::structure::ModeConfig;
 use crate::common::quick_config;
 use crate::common::stream::SecureStream;
+use crate::data::DatabaseDriver;
+use crate::data::entities::predictor::Entity as PredictorModel;
 use crate::model::{self, BlockSizePredictor};
+use crate::server::database::ServerDatabase;
 use anyhow::{anyhow, bail};
 use futures::FutureExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -15,6 +19,7 @@ use tokio::net::TcpListener;
 pub struct Server {
     listener: TcpListener,
     config: Config,
+    database: ServerDatabase,
     clients: Arc<Mutex<HashMap<SocketAddr, Client>>>,
     predictor: Arc<Mutex<BlockSizePredictor>>,
 }
@@ -38,11 +43,16 @@ impl Server {
             server_ref.server().port
         );
 
-        let predictor = model::initialize!("model.json")?;
+        let database = ServerDatabase::new(None).await?;
+
+        let model = PredictorModel::find_by_id(1).one(&*database).await?;
+
+        let predictor = model::BlockSizePredictor::rescue(model)?;
 
         println!("Initialized predictor model");
 
         Ok(Self {
+            database,
             listener,
             config,
             predictor: Arc::new(Mutex::new(predictor)),

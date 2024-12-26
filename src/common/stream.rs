@@ -9,7 +9,7 @@ use fixedstr::zstr;
 use rand::{RngCore, rngs::OsRng};
 use snowstorm::{Keypair, NoiseStream, snow::HandshakeState};
 use tokio::{
-    io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, ReadBuf},
+    io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Interest, ReadBuf, Ready},
     net::TcpStream,
 };
 
@@ -109,6 +109,10 @@ impl SecureStream {
         Ok(Self {
             inner: encrypted_stream,
         })
+    }
+
+    pub async fn ready(&self, interest: Interest) -> io::Result<Ready> {
+        self.inner.get_inner().ready(interest).await
     }
 }
 

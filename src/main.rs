@@ -2,6 +2,7 @@
 
 mod client;
 mod common;
+mod data;
 mod model;
 mod server;
 
@@ -24,8 +25,8 @@ use tokio::{
     time::Instant,
 };
 
-use common::quick_config;
 use common::sync;
+use common::{quick_config, sync::apply_delta};
 use model::BlockSizePredictor;
 
 #[tokio::main]
@@ -78,12 +79,13 @@ async fn sync_main() {
     let mut old_file = File::options()
         .read(true)
         .write(true)
-        .open("test/data/small/old.txt")
+        // .open("test/data/small/old.txt")
         // .open("test/data/medium/old.txt")
-        // .open("test/data/big/old.txt")
+        .open("test/data/big/old.txt")
         .unwrap();
     let (signature_encoded, predicted_block_size) =
         sync::calculate_signature(&mut old_file, &mut predictor).unwrap();
+    drop(old_file);
     println!("Used block size: {}", predicted_block_size);
     let signature_encoded_len = signature_encoded.len();
 
@@ -100,9 +102,9 @@ async fn sync_main() {
 
     let mut new_file = File::options()
         .read(true)
-        .open("test/data/small/new.txt")
+        // .open("test/data/small/new.txt")
         // .open("test/data/medium/new.txt")
-        // .open("test/data/big/new.txt")
+        .open("test/data/big/new.txt")
         .unwrap();
 
     let (delta, new_file_len) = sync::calculate_delta(&mut new_file, signature_encoded).unwrap();
@@ -118,15 +120,27 @@ async fn sync_main() {
     // V
 
     //? RUNNING SERVER SIDE
-    // let final_start = Instant::now();
+    let final_start = Instant::now();
 
     let compression_rate: f32 =
         new_file_len as f32 / (delta.len() + 8 + signature_encoded_len) as f32;
     let delta_len = delta.len();
 
-    // apply_delta(&mut old_file, delta, new_file_len).unwrap();
+    // let mut old_file = File::options()
+    //     .read(true)
+    //     .write(true)
+    //     // .open("test/data/small/old.txt")
+    //     // .open("test/data/medium/old.txt")
+    //     .open("test/data/big/old.txt")
+    //     .unwrap();
 
-    // let final_elapsed = final_start.elapsed();
+    // let old_file = "test/data/small/old.txt";
+    // let old_file = "test/data/medium/old.txt";
+    let old_file = "test/data/big/old.txt";
+
+    apply_delta(old_file, delta, new_file_len).unwrap();
+
+    let final_elapsed = final_start.elapsed();
 
     predictor.tune(new_file_len, predicted_block_size, compression_rate);
     predictor.save();
@@ -135,9 +149,10 @@ async fn sync_main() {
 
     // logging time taken
     println!(
-        "Server elapsed: {:?}\nClient elapsed: {:?}",
+        "\nServer elapsed: {:?}\nClient elapsed: {:?}",
         server_elapsed, client_elapsed
     );
+    println!("Apply delta elapsed: {:?}", final_elapsed);
     println!("\nServer transfered {} bytes", signature_encoded_len);
     println!("\nClient transfered {} bytes", delta_len + 8);
 

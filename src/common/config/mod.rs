@@ -1,7 +1,6 @@
-mod store;
-pub mod structure;
+mod primary;
+mod sync;
 
-use structure::ConfigStructure;
-
-pub use store::Config;
-pub(crate) use store::quick_config;
+pub use primary::store::Config;
+pub(crate) use primary::store::quick_config;
+pub use primary::structure::{self, ConfigTOML};

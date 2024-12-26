@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::{DynamicPacket, PacketBase};
 
 use super::{super::StaticPacket, size::SizePacket};
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SanityPacket {
     pub message: Vec<u8>,
 }

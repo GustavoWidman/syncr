@@ -1,5 +1,7 @@
-use linfa::traits::{Fit, Predict};
 use linfa::DatasetBase;
+use linfa::traits::{Fit, Predict};
+
+use crate::data::entities::predictor::Model as PredictorSave;
 use linfa_trees::{DecisionTree, SplitQuality};
 use ndarray::{Array1, Array2, ArrayBase, Ix1, Ix2, OwnedRepr};
 use serde::{Deserialize, Serialize};
@@ -15,6 +17,7 @@ use super::utils::{default_block_size, fit_into_power_of_two_u32, fit_into_power
 pub struct BlockSizePredictor {
     model: Option<DecisionTree<f64, usize>>,
 
+    #[serde(skip)]
     model_file: String,
 
     // training data
@@ -45,19 +48,33 @@ impl BlockSizePredictor {
             // Create a new predictor with empty model and data
             Ok(BlockSizePredictor {
                 model: None,
-                model_file,
+                model_file: model_file.to_string(),
                 data: Vec::new(),
             })
+        }
+    }
+
+    pub fn new() -> Self {
+        Self {
+            model: None,
+            model_file: "".to_string(),
+            data: Vec::new(),
+        }
+    }
+
+    pub fn rescue(model_binary: Option<PredictorSave>) -> Result<Self, anyhow::Error> {
+        match model_binary {
+            Some(model_binary) => Ok(bincode::deserialize(&model_binary.save)?),
+            None => Ok(Self::new()),
         }
     }
 
     pub fn predict(&mut self, file_size: u64) -> u32 {
         match &self.model {
             Some(m) => {
-                let input = Array2::from_shape_vec(
-                    (1, 1),
-                    vec![fit_into_power_of_two_u64(file_size) as f64],
-                )
+                let input = Array2::from_shape_vec((1, 1), vec![
+                    fit_into_power_of_two_u64(file_size) as f64,
+                ])
                 .unwrap();
 
                 let output = m.predict(&input);
@@ -175,6 +192,10 @@ impl BlockSizePredictor {
         // overwrite (since we've sought to start)
         file.write_all(serialized.as_bytes())
             .expect("Error writing the model to file.");
+    }
+
+    pub fn save_binary(&self) -> Result<Vec<u8>, anyhow::Error> {
+        Ok(bincode::serialize(&self)?)
     }
 
     // allows the model to wonder a value upwards or downwards of the current most optimal value

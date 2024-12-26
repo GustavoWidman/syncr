@@ -1,10 +1,15 @@
 [config]
-secret = "password"
+secret = ""
 mode = "client"
 
 [config.client]
 server_ip = "127.0.0.1"
 server_port = 7878
 
-[config.client.directories]
-paths = []
+[[config.client.directories]]
+path = "~/Documents/directory"
+active = true
+
+[[config.client.directories]]
+path = "~/Downloads/gustavo"
+active = true

@@ -1,15 +1,17 @@
 use std::fs::File;
 
-use fast_rsync::{Signature, SignatureOptions};
-
-use super::utils::extract_file_contents;
 use crate::model::BlockSizePredictor;
+use fast_rsync::{Signature, SignatureOptions};
+use memmap2::Mmap;
+use rdiff::BlockHashes;
 
 pub fn calculate_signature(
     file: &mut File,
     predictor: &mut BlockSizePredictor,
 ) -> anyhow::Result<(Vec<u8>, u32)> {
-    let (file_contents, file_len) = extract_file_contents(file)?;
+    // let (file_contents, file_len) = extract_file_contents(file)?;
+    let mmap = unsafe { Mmap::map(&*file)? };
+    let file_len = mmap.len() as u64;
 
     let predicted_block_size = predictor.predict(file_len);
     let (wondered_value, has_wondered) = predictor.wonder(file_len);
@@ -35,7 +37,7 @@ pub fn calculate_signature(
     };
 
     Ok((
-        Signature::calculate(&file_contents, options).into_serialized(),
+        Signature::calculate(&mmap, options).into_serialized(),
         predicted_block_size,
     ))
 }

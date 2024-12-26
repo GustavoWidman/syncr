@@ -1,4 +1,5 @@
 mod config;
+mod database;
 pub mod handlers;
 mod init;
 

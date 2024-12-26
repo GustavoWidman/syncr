@@ -1,18 +1,35 @@
 use anyhow::{Context, Result};
-use std::{fs::File, io::Seek};
+use memmap2::Mmap;
+use std::{
+    fs::File,
+    io::{BufWriter, Cursor, Seek, SeekFrom, Write},
+    path::Path,
+};
+use tempfile::NamedTempFile;
 
-use fast_rsync::{apply, diff, Signature, SignatureOptions};
+use fast_rsync::{Signature, SignatureOptions, apply, diff};
 
-use super::utils::extract_file_contents;
+pub fn apply_delta<P>(file_path: P, delta: Vec<u8>, new_file_len: u64) -> Result<()>
+where
+    P: AsRef<Path>,
+{
+    let file = File::options()
+        .read(true)
+        .open(&file_path)
+        .context("Failed to open the original file for reading")?;
 
-pub fn apply_delta(file: &mut File, delta: Vec<u8>, new_file_len: u64) -> Result<()> {
-    let (file_contents, _) = extract_file_contents(file)?;
+    let base_mmap = unsafe { Mmap::map(&file)? };
+    let mut temp_file = NamedTempFile::new()?;
 
-    file.seek(std::io::SeekFrom::Start(0))
-        .context("Failed to seek to start of file")?;
-    file.set_len(new_file_len)
-        .context("Failed to set file length")?;
-    apply(&file_contents, &delta, file).context("Failed to apply delta")?;
+    apply(&base_mmap, &delta, &mut temp_file).context("Failed to apply delta")?;
+
+    temp_file
+        .flush()
+        .context("Failed to flush temporary file")?;
+
+    temp_file
+        .persist(&file_path)
+        .context("Failed to persist temporary file")?;
 
     Ok(())
 }
@@ -22,14 +39,10 @@ pub fn calculate_delta(file: &mut File, serialized_signature: Vec<u8>) -> Result
         .context("Failed to deserialize signature")?;
     let signature = deserialized.index();
 
-    let (file_contents, file_len) = extract_file_contents(file)?;
+    let mmap = unsafe { Mmap::map(&*file)? };
 
-    let mut delta_buf = Vec::new(); // dynamically allocated
-    delta_buf
-        .try_reserve(file_len as usize)
-        .context("Failed to allocate memory for delta buffer")?;
+    let mut delta_buf = Vec::new();
+    diff(&signature, &mmap, &mut delta_buf).context("Failed to calculate delta")?;
 
-    diff(&signature, &file_contents, &mut delta_buf).context("Failed to calculate delta")?;
-
-    Ok((delta_buf, file_len))
+    Ok((delta_buf, mmap.len() as u64))
 }

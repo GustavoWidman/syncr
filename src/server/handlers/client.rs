@@ -1,6 +1,6 @@
 use futures::{FutureExt, TryFutureExt};
 use tokio::{
-    io::{self, AsyncReadExt, AsyncWriteExt},
+    io::{self, AsyncReadExt, AsyncWriteExt, Interest},
     task::{AbortHandle, JoinHandle},
 };
 
@@ -22,49 +22,24 @@ impl Client {
     pub async fn handle(mut stream: SecureStream) -> Result<(), anyhow::Error> {
         let mut last_size_packet: Option<SizePacket> = None;
         loop {
-            let header_buffer = Client::read_header(&mut stream).await?;
-            println!("Header: {:?}", header_buffer);
-            let packet = match get_buffer_for_type(&header_buffer, &last_size_packet) {
-                Ok(mut buffer) => {
-                    Client::read_packet(&mut stream, &mut buffer).await?;
+            let ready = stream
+                .ready(Interest::READABLE | Interest::WRITABLE)
+                .await?;
+            if !ready.is_readable() || !ready.is_writable() {
+                continue;
+            }
 
-                    println!("Packet: {:?}", buffer);
+            let packet = Client::extract_packet(&mut stream, &mut last_size_packet).await?;
 
-                    let packet = packetize(&header_buffer, buffer)?;
-
-                    match packet {
-                        Packets::Size(size_packet) => {
-                            println!(
-                                "Received size packet, ready for a packet of size {:?}",
-                                size_packet.packet_size
-                            );
-                            last_size_packet = Some(size_packet);
-                            continue;
-                        }
-                        other_packet => {
-                            if last_size_packet.is_some() {
-                                last_size_packet = None;
-                            }
-
-                            other_packet
-                        }
-                    }
-                }
-                Err(e) => {
-                    return Err(e.into());
-                }
-            };
-
-            println!("Packet: {:?}", packet);
             match packet {
-                Packets::Sanity(packet) => {
-                    println!(
-                        "Received sanity packet. Message: {:?}",
-                        std::str::from_utf8(&packet.message)?
-                    );
+                // dont handle size packets
+                Packets::Size(size_packet) => {
+                    continue;
                 }
-                _ => {}
-            };
+                _ => {
+                    Client::handle_packet(packet, &mut stream);
+                }
+            }
         }
     }
 
@@ -103,5 +78,50 @@ impl Client {
         }
 
         Ok(buf)
+    }
+
+    pub async fn extract_packet(
+        mut stream: &mut SecureStream,
+        last_size_packet: &mut Option<SizePacket>,
+    ) -> Result<Packets, anyhow::Error> {
+        let header_buffer = Client::read_header(&mut stream).await?;
+
+        // println!("Header: {:?}", header_buffer);
+        let packet = match get_buffer_for_type(&header_buffer, last_size_packet) {
+            Ok(mut buffer) => {
+                Client::read_packet(&mut stream, &mut buffer).await?;
+
+                // println!("Packet: {:?}", buffer);
+
+                let packet = packetize(&header_buffer, buffer)?;
+
+                match packet {
+                    Packets::Size(size_packet) => {
+                        // println!(
+                        //     "Received size packet, ready for a packet of size {:?}",
+                        //     size_packet.packet_size
+                        // );
+                        *last_size_packet = Some(size_packet.clone());
+                        return Ok(Packets::Size(size_packet));
+                    }
+                    other_packet => {
+                        if last_size_packet.is_some() {
+                            *last_size_packet = None;
+                        }
+
+                        other_packet
+                    }
+                }
+            }
+            Err(e) => {
+                return Err(e.into());
+            }
+        };
+
+        Ok(packet)
+    }
+
+    pub fn handle_packet(packet: Packets, stream: &mut SecureStream) -> Result<(), anyhow::Error> {
+        todo!()
     }
 }

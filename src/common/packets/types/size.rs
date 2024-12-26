@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use super::{PacketBase, StaticPacket};
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone)]
 pub struct SizePacket {
     pub packet_size: u64,
 }

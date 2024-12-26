@@ -22,3 +22,12 @@ snowstorm = "0.4.0"
 notify = "7.0.0"
 toml = "0.8.19"
 fixedstr = { version = "0.5.8", features = ["serde"] }
+sea-orm = { version = "1.1.2", features = [
+	"sqlx-sqlite",
+	"macros",
+	"runtime-tokio-rustls",
+] }
+sea-orm-migration = "1.1.2"
+rdiff = "0.1.2"
+memmap2 = "0.9.5"
+tempfile = "3.14.0"

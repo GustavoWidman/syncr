@@ -1,7 +1,7 @@
 use tokio::io::{AsyncWrite, AsyncWriteExt};
 
 pub trait PacketBase:
-    serde::Serialize + serde::de::DeserializeOwned + Send + Sync + Default + 'static
+    serde::Serialize + serde::de::DeserializeOwned + Send + Sync + Default + Clone + 'static
 {
     type BuildParams;
     const TYPE: &'static [u8; 4];
