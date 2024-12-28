@@ -1,5 +1,5 @@
 mod config;
-mod database;
+pub mod database; // todo remove pub
 pub mod handlers;
 mod init;
 

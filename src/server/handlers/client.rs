@@ -1,12 +1,11 @@
-use futures::{FutureExt, TryFutureExt};
 use tokio::{
-    io::{self, AsyncReadExt, AsyncWriteExt, Interest},
-    task::{AbortHandle, JoinHandle},
+    io::{self, AsyncReadExt, Interest},
+    task::AbortHandle,
 };
 
 use crate::common::{
     packetize,
-    packets::{Packets, SizePacket, StaticPackets, get_buffer_for_type},
+    packets::{Packets, SizePacket, get_buffer_for_type},
     stream::SecureStream,
 };
 
@@ -33,12 +32,10 @@ impl Client {
 
             match packet {
                 // dont handle size packets
-                Packets::Size(size_packet) => {
+                Packets::Size(_) => {
                     continue;
                 }
-                _ => {
-                    Client::handle_packet(packet, &mut stream);
-                }
+                _ => Client::handle_packet(packet, &mut stream)?,
             }
         }
     }
@@ -60,7 +57,7 @@ impl Client {
         Ok(())
     }
 
-    pub async fn read_header(stream: &mut SecureStream) -> io::Result<([u8; 4])> {
+    pub async fn read_header(stream: &mut SecureStream) -> io::Result<[u8; 4]> {
         let expected_size = 4;
         let mut buf = [0u8; 4];
         buf.fill(0);

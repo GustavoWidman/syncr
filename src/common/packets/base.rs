@@ -1,5 +1,3 @@
-use tokio::io::{AsyncWrite, AsyncWriteExt};
-
 pub trait PacketBase:
     serde::Serialize + serde::de::DeserializeOwned + Send + Sync + Default + Clone + 'static
 {

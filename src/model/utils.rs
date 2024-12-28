@@ -1,4 +1,4 @@
-pub fn default_block_size(file_size: u64) -> u32 {
+pub fn default_block_size(file_size: usize) -> u32 {
     match file_size as u32 {
         0..=1_000_000 => 1024,           // 1KB for files <= 1MB
         1_000_001..=100_000_000 => 4096, // 4KB for files <= 100MB
@@ -6,7 +6,7 @@ pub fn default_block_size(file_size: u64) -> u32 {
     }
 }
 
-pub fn fit_into_power_of_two_u32(n: u32) -> u32 {
+fn fit_into_power_of_two_u32(n: u32) -> u32 {
     if n < 1 {
         return 1;
     }
@@ -37,7 +37,7 @@ pub fn fit_into_power_of_two_u32(n: u32) -> u32 {
     }
 }
 
-pub fn fit_into_power_of_two_u64(n: u64) -> u64 {
+fn fit_into_power_of_two_u64(n: u64) -> u64 {
     if n < 1 {
         return 1;
     }
@@ -66,5 +66,13 @@ pub fn fit_into_power_of_two_u64(n: u64) -> u64 {
         rounded_down
     } else {
         rounded_up
+    }
+}
+
+pub fn naivify_file_size(file_size: usize) -> usize {
+    match std::mem::size_of::<usize>() {
+        4 => fit_into_power_of_two_u32(file_size as u32) as usize,
+        // assume 64-bit system or higher (if we ever get to 128-bit systems)
+        _ => fit_into_power_of_two_u64(file_size as u64) as usize,
     }
 }

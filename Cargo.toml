@@ -22,12 +22,17 @@ snowstorm = "0.4.0"
 notify = "7.0.0"
 toml = "0.8.19"
 fixedstr = { version = "0.5.8", features = ["serde"] }
-sea-orm = { version = "1.1.2", features = [
-	"sqlx-sqlite",
-	"macros",
-	"runtime-tokio-rustls",
-] }
-sea-orm-migration = "1.1.2"
 rdiff = "0.1.2"
 memmap2 = "0.9.5"
 tempfile = "3.14.0"
+blake3 = { version = "1.5.5", features = ["rayon", "mmap", "serde"] }
+diesel = { version = "2.2.6", features = [
+	"sqlite",
+	"returning_clauses_for_sqlite_3_35",
+	"chrono",
+] }
+libsqlite3-sys = { version = "0.30.1", features = ["bundled"] }
+chrono = "0.4.39"
+diesel_migrations = { version = "2.2.0", features = ["sqlite"] }
+rayon = "1.10.0"
+xxhash-rust = { version = "0.8.14", features = ["xxh3"] }

@@ -5,9 +5,9 @@ pub(crate) use macros::packet_buffer_mapper;
 pub use send::send_packet;
 
 use super::{
-    DynamicPackets, Packets, StaticPackets,
+    Packets,
     base::PacketBase,
-    types::{SanityPacket, SizePacket, TieBreakPacket},
+    types::{SanityPacket, SizePacket},
 };
 
 pub fn packetize(packet_type: &[u8; 4], packet_buf: Vec<u8>) -> Result<Packets, anyhow::Error> {
@@ -15,7 +15,6 @@ pub fn packetize(packet_type: &[u8; 4], packet_buf: Vec<u8>) -> Result<Packets, 
     let packet_type = packet_type.to_uppercase();
 
     match packet_type.as_str() {
-        "TYBR" => Ok(Packets::TieBreak(TieBreakPacket::from_bytes(&packet_buf))),
         "SIZE" => Ok(Packets::Size(SizePacket::from_bytes(&packet_buf))),
         "SNTY" => Ok(Packets::Sanity(SanityPacket::from_bytes(&packet_buf))),
         _ => Err(anyhow::anyhow!("Invalid packet type")),

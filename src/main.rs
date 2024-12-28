@@ -1,33 +1,16 @@
-#![allow(warnings)]
-
 mod client;
 mod common;
 mod data;
 mod model;
+mod schema;
 mod server;
 
-use anyhow::{Context, Result, bail};
-use fast_rsync::{Signature, SignatureOptions, apply, diff};
-use std::{
-    env,
-    ffi::OsStr,
-    fs::{self, File},
-    future,
-    io::{Read, Seek},
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex, RwLock},
-    thread::panicking,
-};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    net::{TcpListener, TcpStream},
-    task,
-    time::Instant,
-};
+use data::DatabaseDriver;
+use server::database::ServerDatabase;
+use std::{env, fs::File};
 
-use common::sync;
+use common::sync::{self, hash_file};
 use common::{quick_config, sync::apply_delta};
-use model::BlockSizePredictor;
 
 #[tokio::main]
 async fn main() {
@@ -56,14 +39,14 @@ async fn watch_main() {
 }
 
 async fn client_main() {
-    let mut client_cfg = quick_config!("./client.toml").unwrap();
+    let client_cfg = quick_config!("./client.toml").unwrap();
     let mut client = client::Client::connect(Some(client_cfg)).await.unwrap();
 
     client.run().await;
 }
 
 async fn server_main() {
-    let mut server_cfg = quick_config!("./server.toml").unwrap();
+    let server_cfg = quick_config!("./server.toml").unwrap();
     let mut server = server::Server::bind(Some(server_cfg)).await.unwrap();
     server.run().await;
 }
@@ -71,17 +54,30 @@ async fn server_main() {
 async fn sync_main() {
     use std::time::Instant;
 
-    //? RUNNING SERVER SIDE
-    let server_start = Instant::now();
+    let test_size = "small";
+    // let test_size = "medium";
+    // let test_size = "big";
 
-    let mut predictor = model::initialize!("model.json").expect("Failed to initialize model");
+    let old_test_path = format!("test/data/{}/old.txt", test_size);
+    let new_test_path = format!("test/data/{}/new.txt", test_size);
+
+    //? COMMON SIDES
+
+    let common_start = Instant::now();
+
+    let mut database = ServerDatabase::new(None).await.unwrap();
+    let mut predictor = model::initialize!(&mut database).unwrap();
+
+    let common_elapsed = common_start.elapsed();
+
+    //? RUNNING SERVER SIDE
+
+    let server_start = Instant::now();
 
     let mut old_file = File::options()
         .read(true)
         .write(true)
-        // .open("test/data/small/old.txt")
-        // .open("test/data/medium/old.txt")
-        .open("test/data/big/old.txt")
+        .open(&old_test_path)
         .unwrap();
     let (signature_encoded, predicted_block_size) =
         sync::calculate_signature(&mut old_file, &mut predictor).unwrap();
@@ -100,12 +96,7 @@ async fn sync_main() {
     //* RUNNING CLIENT SIDE
     let client_start = Instant::now();
 
-    let mut new_file = File::options()
-        .read(true)
-        // .open("test/data/small/new.txt")
-        // .open("test/data/medium/new.txt")
-        .open("test/data/big/new.txt")
-        .unwrap();
+    let mut new_file = File::options().read(true).open(&new_test_path).unwrap();
 
     let (delta, new_file_len) = sync::calculate_delta(&mut new_file, signature_encoded).unwrap();
 
@@ -126,24 +117,27 @@ async fn sync_main() {
         new_file_len as f32 / (delta.len() + 8 + signature_encoded_len) as f32;
     let delta_len = delta.len();
 
-    // let mut old_file = File::options()
-    //     .read(true)
-    //     .write(true)
-    //     // .open("test/data/small/old.txt")
-    //     // .open("test/data/medium/old.txt")
-    //     .open("test/data/big/old.txt")
-    //     .unwrap();
-
-    // let old_file = "test/data/small/old.txt";
-    // let old_file = "test/data/medium/old.txt";
-    let old_file = "test/data/big/old.txt";
-
-    apply_delta(old_file, delta, new_file_len).unwrap();
+    apply_delta(&old_test_path, delta).unwrap();
 
     let final_elapsed = final_start.elapsed();
 
-    predictor.tune(new_file_len, predicted_block_size, compression_rate);
-    predictor.save();
+    // hash both files
+    let old_hash = hash_file(&old_test_path).unwrap();
+    let new_hash = hash_file(&new_test_path).unwrap();
+
+    // compare hashes
+    if old_hash == new_hash {
+        println!("Files are identical");
+    }
+
+    // undo the apply, copy old.txt.bak to old.txt
+    let old_bak_path = format!("test/data/{}/old.txt.bak", test_size);
+    std::fs::copy(old_bak_path, old_test_path).unwrap();
+
+    predictor
+        .tune(new_file_len, predicted_block_size, compression_rate)
+        .unwrap();
+    predictor.save(&mut database).await.unwrap();
 
     //? END RUNNING SERVER SIDE
 
@@ -153,6 +147,7 @@ async fn sync_main() {
         server_elapsed, client_elapsed
     );
     println!("Apply delta elapsed: {:?}", final_elapsed);
+    println!("Common initialization time: {:?}", common_elapsed);
     println!("\nServer transfered {} bytes", signature_encoded_len);
     println!("\nClient transfered {} bytes", delta_len + 8);
 

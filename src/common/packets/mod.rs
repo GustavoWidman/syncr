@@ -13,10 +13,9 @@ pub use dynamic::DynamicPacket;
 pub use r#static::StaticPacket;
 pub use utils::packetize;
 
-pub use types::{DynamicPackets, Packets, SanityPacket, SizePacket, StaticPackets, TieBreakPacket};
+pub use types::{DynamicPackets, Packets, SanityPacket, SizePacket, StaticPackets};
 
 packet_buffer_mapper!(
-    TieBreakPacket,
     SizePacket
     ;
     SanityPacket

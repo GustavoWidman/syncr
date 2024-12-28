@@ -1,16 +1,14 @@
+mod node;
 mod predictor;
 pub(super) mod utils;
 
 pub mod macros {
     macro_rules! initialize {
-        ($a:literal) => {
-            crate::model::BlockSizePredictor::initialize($a.to_string())
-        };
-        ($a:expr) => {
-            crate::model::BlockSizePredictor::initialize($a)
+        ($conn:expr) => {
+            crate::model::CompressionTree::load($conn)
         };
         () => {
-            crate::model::BlockSizePredictor::initialize("model.json".to_string())
+            crate::model::CompressionTree::new()
         };
     }
 
@@ -19,4 +17,4 @@ pub mod macros {
 
 // exports
 pub(crate) use macros::initialize;
-pub(crate) use predictor::BlockSizePredictor;
+pub(crate) use predictor::CompressionTree;

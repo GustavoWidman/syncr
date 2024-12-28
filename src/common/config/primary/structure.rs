@@ -1,12 +1,11 @@
 use std::{
     net::IpAddr,
     ops::{Deref, DerefMut},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 use fixedstr::zstr;
 use serde::{Deserialize, Serialize};
-use toml::value::Array;
 
 #[derive(Deserialize, Serialize, Default, Debug)]
 pub struct ConfigTOML {
@@ -30,6 +29,10 @@ impl DerefMut for ConfigTOML {
 #[derive(Deserialize, Serialize, Debug)]
 pub struct ConfigInner {
     pub secret: zstr<32>,
+
+    #[serde(rename = "auto-wonder")]
+    pub auto_wonder: bool,
+
     #[serde(flatten)]
     pub mode_config: ModeConfig,
 }
@@ -38,6 +41,7 @@ impl Default for ConfigInner {
     fn default() -> Self {
         Self {
             secret: "password".into(),
+            auto_wonder: true,
             mode_config: ModeConfig::Client {
                 client: ClientConfig::default(),
             },
@@ -79,8 +83,12 @@ impl Default for ServerConfig {
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct ClientConfig {
+    #[serde(rename = "server-ip")]
     pub server_ip: IpAddr,
+
+    #[serde(rename = "server-port")]
     pub server_port: u16,
+
     pub directories: Vec<Directory>,
 }
 

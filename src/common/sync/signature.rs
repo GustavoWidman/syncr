@@ -1,32 +1,17 @@
 use std::fs::File;
 
-use crate::model::BlockSizePredictor;
+use crate::model::CompressionTree;
 use fast_rsync::{Signature, SignatureOptions};
 use memmap2::Mmap;
-use rdiff::BlockHashes;
 
 pub fn calculate_signature(
     file: &mut File,
-    predictor: &mut BlockSizePredictor,
+    predictor: &mut CompressionTree,
 ) -> anyhow::Result<(Vec<u8>, u32)> {
-    // let (file_contents, file_len) = extract_file_contents(file)?;
     let mmap = unsafe { Mmap::map(&*file)? };
-    let file_len = mmap.len() as u64;
+    let file_len = mmap.len();
 
-    let predicted_block_size = predictor.predict(file_len);
-    let (wondered_value, has_wondered) = predictor.wonder(file_len);
-
-    if has_wondered {
-        println!(
-            "predictor wondered if the value {:?} might be better instead when faced with the question {:?}",
-            wondered_value, file_len
-        );
-    } else {
-        println!(
-            "predictor has concluded and pondered upon that {:?} is the absolute best value for {:?}",
-            predicted_block_size, file_len
-        );
-    }
+    let predicted_block_size = predictor.wonderful_predict(file_len);
 
     //* temporary replacement for testing :)
     // let predicted_block_size = 4096;

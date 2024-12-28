@@ -1,10 +1,11 @@
 [config]
 secret = ""
+auto-wonder = true
 mode = "client"
 
 [config.client]
-server_ip = "127.0.0.1"
-server_port = 7878
+server-ip = "127.0.0.1"
+server-port = 7878
 
 [[config.client.directories]]
 path = "~/Documents/directory"

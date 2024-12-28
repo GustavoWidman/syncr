@@ -1,23 +1,21 @@
 use std::sync::Mutex;
-use std::thread::park;
-use std::{io::Write, sync::Arc, thread};
 
-use dirs::home_dir;
-use tokio::io::{AsyncReadExt, AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
-use tokio::sync::Mutex as TokioMutex;
-use tokio::task;
 
-use super::config::{PARAMS, SECRET};
 use crate::common::config::{Config, quick_config};
 use crate::common::packets::{DynamicPacket, PacketBase, SanityPacket};
 use crate::common::stream::SecureStream;
-use crate::model::{self, BlockSizePredictor};
+use crate::data::DatabaseDriver;
+use crate::model::{self, CompressionTree};
+
+use super::database::ClientDatabase;
 
 pub struct Client {
     stream: SecureStream,
     config: Config,
-    predictor: Mutex<BlockSizePredictor>,
+    database: ClientDatabase,
+    predictor: Mutex<CompressionTree>,
 }
 
 impl Client {
@@ -28,29 +26,32 @@ impl Client {
         };
         let client_ref = config.as_client()?; // implicitly assert we're in client mode too!
 
+        let mut database = ClientDatabase::new(None).await?;
+
+        println!("Connected to database");
+
+        let predictor = model::initialize!(&mut database)?;
+
+        println!("Initialized predictor model");
+
         let stream = TcpStream::connect((
             client_ref.client().server_ip,
             client_ref.client().server_port,
         ))
         .await?;
-        let mut stream = SecureStream::new(stream, &config.secret).await?;
+        let stream = SecureStream::new(stream, &config.secret).await?;
 
         println!("Connected to server");
-
-        let predictor = model::initialize!("model.json")?;
-
-        println!("Initialized predictor model");
 
         Ok(Self {
             stream,
             config,
             predictor: Mutex::new(predictor),
+            database,
         })
     }
 
     pub async fn run(&mut self) {
-        let mut buffer = [0; 4096];
-
         let message = b"hello world";
         let sanity_packet = SanityPacket::build(message.to_vec());
         sanity_packet.write(&mut *self.stream).await.unwrap();

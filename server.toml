@@ -1,5 +1,6 @@
 [config]
 secret = "password"
+auto-wonder = true
 mode = "server"
 
 [config.server]

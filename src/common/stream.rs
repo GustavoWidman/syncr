@@ -1,19 +1,12 @@
-use std::{
-    ops::{Deref, DerefMut},
-    pin::Pin,
-    task::{Context, Poll},
-};
+use std::ops::{Deref, DerefMut};
 
-use anyhow::bail;
 use fixedstr::zstr;
 use rand::{RngCore, rngs::OsRng};
-use snowstorm::{Keypair, NoiseStream, snow::HandshakeState};
+use snowstorm::NoiseStream;
 use tokio::{
-    io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt, Interest, ReadBuf, Ready},
+    io::{self, AsyncReadExt, AsyncWriteExt, Interest, Ready},
     net::TcpStream,
 };
-
-use super::packets::{PacketBase, StaticPacket, TieBreakPacket};
 
 static HANDSHAKE_PARAM: &str = "Noise_XXpsk3_25519_ChaChaPoly_BLAKE2b";
 static TRANSPORT_PARAM: &str = "Noise_XX_25519_ChaChaPoly_BLAKE2b";
@@ -35,9 +28,9 @@ impl SecureStream {
         stream.write_all(&random).await?;
         stream.flush().await?;
 
-        // packet collection
+        // random collection
         let mut buf = [0u8; 8];
-        let n = stream.read_exact(&mut buf).await?;
+        stream.read_exact(&mut buf).await?;
         let their_rng = u64::from_le_bytes(buf);
 
         match my_rng > their_rng {
@@ -96,15 +89,12 @@ impl SecureStream {
         }
     }
 
-    pub async fn new(
-        mut stream: TcpStream,
-        password_str: &zstr<32>,
-    ) -> Result<Self, anyhow::Error> {
+    pub async fn new(stream: TcpStream, password_str: &zstr<32>) -> Result<Self, anyhow::Error> {
         // todo replace with config or .env reading (maybe read from .syncr dir)
         let mut password = [0u8; 32];
         fill_buffer(&mut password, password_str);
 
-        let mut encrypted_stream = Self::handshake(stream, &password).await?;
+        let encrypted_stream = Self::handshake(stream, &password).await?;
 
         Ok(Self {
             inner: encrypted_stream,

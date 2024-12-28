@@ -1,27 +1,22 @@
-use sea_orm::*;
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use super::handlers::Client;
 use crate::common::config::Config;
-use crate::common::config::structure::ModeConfig;
 use crate::common::quick_config;
 use crate::common::stream::SecureStream;
 use crate::data::DatabaseDriver;
-use crate::data::entities::predictor::Entity as PredictorModel;
-use crate::model::{self, BlockSizePredictor};
+use crate::model::{self, CompressionTree};
 use crate::server::database::ServerDatabase;
-use anyhow::{anyhow, bail};
 use futures::FutureExt;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 pub struct Server {
     listener: TcpListener,
     config: Config,
     database: ServerDatabase,
     clients: Arc<Mutex<HashMap<SocketAddr, Client>>>,
-    predictor: Arc<Mutex<BlockSizePredictor>>,
+    predictor: Arc<Mutex<CompressionTree>>,
 }
 
 impl Server {
@@ -43,11 +38,11 @@ impl Server {
             server_ref.server().port
         );
 
-        let database = ServerDatabase::new(None).await?;
+        let mut database = ServerDatabase::new(None).await?;
 
-        let model = PredictorModel::find_by_id(1).one(&*database).await?;
+        println!("Connected to database");
 
-        let predictor = model::BlockSizePredictor::rescue(model)?;
+        let predictor = model::initialize!(&mut database)?;
 
         println!("Initialized predictor model");
 
@@ -63,7 +58,7 @@ impl Server {
     async fn accept(&mut self) -> Result<(SecureStream, SocketAddr), anyhow::Error> {
         let (stream, addr) = self.listener.accept().await?;
 
-        let mut stream = SecureStream::new(stream, &self.config.secret).await?;
+        let stream = SecureStream::new(stream, &self.config.secret).await?;
 
         Ok((stream, addr))
     }
@@ -85,7 +80,7 @@ impl Server {
     pub async fn run(&mut self) {
         loop {
             match self.accept().await {
-                Ok((mut stream, addr)) => {
+                Ok((stream, addr)) => {
                     println!("New connection from {}", addr.to_string());
 
                     let handle = tokio::spawn(async move { Client::handle(stream).await });

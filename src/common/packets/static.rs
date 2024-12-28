@@ -6,7 +6,7 @@ pub trait StaticPacket: super::PacketBase {
     }
 
     fn make_buffer() -> Result<Vec<u8>, anyhow::Error> {
-        let mut serialized_size = bincode::serialized_size(&Self::default())? as usize;
+        let serialized_size = bincode::serialized_size(&Self::default())? as usize;
         let mut buffer = Vec::with_capacity(serialized_size);
         buffer.resize(serialized_size, 0);
 

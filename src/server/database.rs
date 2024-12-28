@@ -3,28 +3,32 @@ use std::{
     path::PathBuf,
 };
 
-use sea_orm::DatabaseConnection;
-
-use crate::data::entities::predictor::Entity as Predictor;
+use diesel::prelude::*;
+use diesel_migrations::{EmbeddedMigrations, embed_migrations};
 
 use crate::data::DatabaseDriver;
 
+pub const COMMON_MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations/common");
+pub const SERVER_MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations/server");
+
 pub struct ServerDatabase {
-    inner: DatabaseConnection,
+    inner: SqliteConnection,
 }
 
 impl DatabaseDriver for ServerDatabase {
-    async fn new(path: Option<PathBuf>) -> Result<Self, anyhow::Error> {
-        let database = Self::connect(path).await?;
+    const MIGRATIONS: [EmbeddedMigrations; 2] = [COMMON_MIGRATIONS, SERVER_MIGRATIONS];
 
-        Self::try_create_table(&database, Predictor).await;
+    async fn new(path: Option<PathBuf>) -> Result<Self, anyhow::Error> {
+        let mut database = Self::connect(path).await.map_err(|e| anyhow::anyhow!(e))?;
+
+        Self::migrate(&mut database).await?;
 
         Ok(Self { inner: database })
     }
 }
 
 impl Deref for ServerDatabase {
-    type Target = DatabaseConnection;
+    type Target = SqliteConnection;
 
     fn deref(&self) -> &Self::Target {
         &self.inner
