@@ -8,7 +8,7 @@ use std::{
 
 #[derive(Debug)]
 pub struct SyncConfig {
-    path: PathBuf,
+    pub path: PathBuf,
     cached: SyncConfigTOML,
 }
 
@@ -39,6 +39,10 @@ impl SyncConfig {
     }
 
     pub fn as_ref(&self) -> &SyncConfigTOML {
+        &self.cached
+    }
+
+    pub fn as_static_ref(&'static self) -> &'static SyncConfigTOML {
         &self.cached
     }
 

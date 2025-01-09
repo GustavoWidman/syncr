@@ -22,7 +22,6 @@ snowstorm = "0.4.0"
 notify = "7.0.0"
 toml = "0.8.19"
 fixedstr = { version = "0.5.8", features = ["serde"] }
-rdiff = "0.1.2"
 memmap2 = "0.9.5"
 tempfile = "3.14.0"
 blake3 = { version = "1.5.5", features = ["rayon", "mmap", "serde"] }
@@ -36,3 +35,7 @@ chrono = "0.4.39"
 diesel_migrations = { version = "2.2.0", features = ["sqlite"] }
 rayon = "1.10.0"
 xxhash-rust = { version = "0.8.14", features = ["xxh3"] }
+indexmap = { version = "2.7.0", features = ["serde", "rayon"] }
+glob = "0.3.1"
+# walkdir = "2.5.0"
+jwalk = "0.8.1"

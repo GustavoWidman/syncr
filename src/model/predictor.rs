@@ -55,6 +55,8 @@ impl CompressionTree {
 
     //? Model Usage
     pub fn wonderful_predict(&mut self, file_size: usize) -> u32 {
+        println!("{:?}", self.nodes);
+        println!("{:?}", self.naive_nodes);
         self.nodes
             .wonderful_find(file_size) // 50/50
             .unwrap_or_else(|| {

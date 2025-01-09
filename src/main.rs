@@ -54,9 +54,9 @@ async fn server_main() {
 async fn sync_main() {
     use std::time::Instant;
 
-    let test_size = "small";
+    // let test_size = "small";
     // let test_size = "medium";
-    // let test_size = "big";
+    let test_size = "big";
 
     let old_test_path = format!("test/data/{}/old.txt", test_size);
     let new_test_path = format!("test/data/{}/new.txt", test_size);

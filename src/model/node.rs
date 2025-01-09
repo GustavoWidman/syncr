@@ -1,16 +1,17 @@
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     hash::{Hash, Hasher},
     sync::{RwLock, RwLockReadGuard, RwLockWriteGuard},
 };
 
 use super::utils::naivify_file_size;
+use indexmap::IndexSet;
 use rand::{rngs::OsRng, seq::SliceRandom};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use xxhash_rust::xxh3::Xxh3;
 
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct TreeNode {
     pub file_size: usize, // file size
     pub rate: f32,
@@ -56,9 +57,27 @@ impl TreeNode {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+impl Hash for TreeNode {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.file_size.hash(state);
+        self.rate.to_bits().hash(state);
+        self.block_size.hash(state);
+        self.naive.hash(state);
+    }
+}
+impl PartialEq for TreeNode {
+    fn eq(&self, other: &Self) -> bool {
+        self.file_size == other.file_size
+            && self.rate == other.rate
+            && self.block_size == other.block_size
+            && self.naive == other.naive
+    }
+}
+impl Eq for TreeNode {}
+
+#[derive(Serialize, Deserialize, Debug)]
 pub struct NodeList {
-    inner: RwLock<Vec<TreeNode>>,
+    inner: RwLock<IndexSet<TreeNode>>,
 
     pub optimal: HashMap<usize, (usize, u64)>, // points from file size to index in inner
 }
@@ -67,18 +86,18 @@ impl NodeList {
     //? Constructor Methods
     pub fn new() -> Self {
         Self {
-            inner: RwLock::new(Vec::new()),
+            inner: RwLock::new(IndexSet::new()),
             optimal: HashMap::new(),
         }
     }
 
     //? Mutex Utilities
-    pub fn read(&self) -> anyhow::Result<RwLockReadGuard<Vec<TreeNode>>> {
+    pub fn read(&self) -> anyhow::Result<RwLockReadGuard<IndexSet<TreeNode>>> {
         self.inner
             .read()
             .map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))
     }
-    pub fn write(&self) -> anyhow::Result<RwLockWriteGuard<Vec<TreeNode>>> {
+    pub fn write(&self) -> anyhow::Result<RwLockWriteGuard<IndexSet<TreeNode>>> {
         self.inner
             .write()
             .map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))
@@ -91,20 +110,25 @@ impl NodeList {
             .write()
             .map_err(|e| anyhow::anyhow!("Lock poisoned: {}", e))?;
 
+        if lock.contains(&node) {
+            return Ok(());
+        }
+
         let index = lock.len();
 
         self.optimal
             .entry(node.file_size)
             .and_modify(|(idx, hash)| {
-                let existing = &lock[*idx];
-                if existing.hash() == *hash && node.rate > existing.rate {
+                if lock.get_index(*idx).map_or(true, |existing| {
+                    existing.hash() == *hash && node.rate >= existing.rate
+                }) {
                     *idx = index;
                     *hash = node.hash();
                 }
             })
             .or_insert((index, node.hash()));
 
-        lock.push(node);
+        lock.insert(node);
 
         Ok(())
     }
@@ -124,7 +148,10 @@ impl NodeList {
         let found = self.find(file_size)?;
 
         match wonder {
-            true => self.wonder(file_size, found),
+            true => {
+                println!("Wondering");
+                self.wonder(file_size, found)
+            }
             false => Some(found),
         }
     }
@@ -162,18 +189,24 @@ impl NodeList {
                 },
             );
 
+        println!("Wondering up: {:?}", wonder_up);
+        println!("Wondering down: {:?}", wonder_down);
+
         match (wonder_up, wonder_down) {
             // has not wondered up or down, choose randomly
-            (true, true) => {
+            (false, false) => {
                 Some(
                     *[wonder_up_value, wonder_down_value]
                         .choose(&mut OsRng)
                         .unwrap(), // unwrap is safe here, list is never empty
                 )
             }
-            (true, false) => Some(wonder_up_value),
-            (false, true) => Some(wonder_down_value),
-            (false, false) => None,
+            // has not wondered up
+            (false, true) => Some(wonder_up_value),
+            // has not wondered down
+            (true, false) => Some(wonder_down_value),
+            // already wondered enough, return current prediction
+            (true, true) => Some(currently_predicted_size),
         }
     }
 }
