@@ -83,18 +83,18 @@ impl Client {
     ) -> Result<Packets, anyhow::Error> {
         let header_buffer = Client::read_header(&mut stream).await?;
 
-        // println!("Header: {:?}", header_buffer);
+        // info!("Header: {:?}", header_buffer);
         let packet = match get_buffer_for_type(&header_buffer, last_size_packet) {
             Ok(mut buffer) => {
                 Client::read_packet(&mut stream, &mut buffer).await?;
 
-                // println!("Packet: {:?}", buffer);
+                // info!("Packet: {:?}", buffer);
 
                 let packet = packetize(&header_buffer, buffer)?;
 
                 match packet {
                     Packets::Size(size_packet) => {
-                        // println!(
+                        // info!(
                         //     "Received size packet, ready for a packet of size {:?}",
                         //     size_packet.packet_size
                         // );

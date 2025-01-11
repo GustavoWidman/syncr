@@ -6,6 +6,7 @@ use std::{
 
 use super::utils::naivify_file_size;
 use indexmap::IndexSet;
+use log::debug;
 use rand::{rngs::OsRng, seq::SliceRandom};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -149,7 +150,7 @@ impl NodeList {
 
         match wonder {
             true => {
-                println!("Wondering");
+                debug!("Wondering");
                 self.wonder(file_size, found)
             }
             false => Some(found),
@@ -189,8 +190,8 @@ impl NodeList {
                 },
             );
 
-        println!("Wondering up: {:?}", wonder_up);
-        println!("Wondering down: {:?}", wonder_down);
+        debug!("Wondering up: {:?}", wonder_up);
+        debug!("Wondering down: {:?}", wonder_down);
 
         match (wonder_up, wonder_down) {
             // has not wondered up or down, choose randomly

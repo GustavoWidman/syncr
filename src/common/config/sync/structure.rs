@@ -1,61 +1,38 @@
-use glob::Pattern as GlobPattern;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+#[derive(Serialize, Deserialize, Debug, Default, Clone, Eq, PartialEq)]
 pub struct SyncConfigTOML {
     pub config: SyncConfigInner,
 }
 
-#[derive(Deserialize, Serialize, Debug)]
-#[serde(tag = "mode")]
-pub enum IgnoreMode {
-    #[serde(rename = "whitelist")]
-    Whitelist { whitelist: Vec<Pattern> },
-    #[serde(rename = "blacklist")]
-    Blacklist { blacklist: Vec<Pattern> },
-}
-
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq)]
 pub struct SyncConfigInner {
     pub debounce: u64,
+    pub ignore_symlinks: bool,
+    pub ignore_hidden: bool,
+    pub max_depth: i32,
+    pub syncr_id: String,
 
-    #[serde(flatten)]
-    pub mode: IgnoreMode,
+    pub patterns: Option<Vec<Pattern>>,
 }
 
 impl Default for SyncConfigInner {
     fn default() -> Self {
         Self {
-            debounce: 1000,
-            mode: IgnoreMode::Blacklist {
-                blacklist: Vec::new(),
-            },
+            debounce: 60000,
+            patterns: Some(Vec::from([Pattern {
+                pattern: "**/*".to_owned(),
+            }])),
+            syncr_id: Uuid::new_v4().to_string(),
+            ignore_symlinks: true,
+            ignore_hidden: false,
+            max_depth: -1,
         }
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, Eq, PartialEq)]
 pub struct Pattern {
-    pub pattern: GlobPattern,
-}
-
-impl Serialize for Pattern {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        serializer.serialize_str(&self.pattern.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for Pattern {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        let pattern = String::deserialize(deserializer)?;
-        Ok(Self {
-            pattern: GlobPattern::new(&pattern).map_err(serde::de::Error::custom)?,
-        })
-    }
+    pub pattern: String,
 }

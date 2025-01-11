@@ -1,5 +1,6 @@
 use std::sync::Mutex;
 
+use log::info;
 use tokio::io::AsyncReadExt;
 use tokio::net::TcpStream;
 
@@ -28,11 +29,11 @@ impl Client {
 
         let mut database = ClientDatabase::new(None).await?;
 
-        println!("Connected to database");
+        info!("Connected to database");
 
         let predictor = model::initialize!(&mut database)?;
 
-        println!("Initialized predictor model");
+        info!("Initialized predictor model");
 
         let stream = TcpStream::connect((
             client_ref.client().server_ip,
@@ -41,7 +42,7 @@ impl Client {
         .await?;
         let stream = SecureStream::new(stream, &config.secret).await?;
 
-        println!("Connected to server");
+        info!("Connected to server");
 
         Ok(Self {
             stream,
@@ -63,6 +64,6 @@ impl Client {
         let mut buf = vec![0; 4096];
         self.stream.read(&mut buf).await.unwrap();
 
-        println!("{}", std::str::from_utf8(&buf).unwrap());
+        info!("{}", std::str::from_utf8(&buf).unwrap());
     }
 }

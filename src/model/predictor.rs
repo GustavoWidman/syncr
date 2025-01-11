@@ -1,4 +1,5 @@
 use diesel::prelude::*;
+use log::info;
 
 use crate::data::entities::BaseEntity;
 use crate::data::entities::predictor::PredictorSave;
@@ -55,8 +56,8 @@ impl CompressionTree {
 
     //? Model Usage
     pub fn wonderful_predict(&mut self, file_size: usize) -> u32 {
-        println!("{:?}", self.nodes);
-        println!("{:?}", self.naive_nodes);
+        info!("{:?}", self.nodes);
+        info!("{:?}", self.naive_nodes);
         self.nodes
             .wonderful_find(file_size) // 50/50
             .unwrap_or_else(|| {

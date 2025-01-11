@@ -4,16 +4,25 @@ mod data;
 mod model;
 mod schema;
 mod server;
+mod utils;
 
+use client::watcher;
+use common::config::SyncConfig;
 use data::DatabaseDriver;
+use log::{LevelFilter, info};
 use server::database::ServerDatabase;
 use std::{env, fs::File};
+use utils::log::Logger;
 
 use common::sync::{self, hash_file};
 use common::{quick_config, sync::apply_delta};
 
 #[tokio::main]
 async fn main() {
+    Logger::init(Some(LevelFilter::Info));
+
+    info!("Intializing syncr...");
+
     // read environment variable MODE
     match env::var("MODE") {
         Ok(mode) => match mode.to_lowercase().as_str() {
@@ -28,13 +37,17 @@ async fn main() {
 }
 
 async fn watch_main() {
-    let mut config = quick_config!("./syncr.toml").unwrap();
+    let sync_config = SyncConfig::read("./syncr.toml".into()).unwrap();
 
-    config.secret = "password".into();
+    let watcher = watcher::Watcher::new(sync_config).await.unwrap();
 
-    config.save().unwrap();
+    watcher
+        .run(move |event| {
+            info!("{event:?}");
+        })
+        .await
+        .unwrap();
 
-    println!("{:?}", config);
     return;
 }
 
@@ -82,7 +95,7 @@ async fn sync_main() {
     let (signature_encoded, predicted_block_size) =
         sync::calculate_signature(&mut old_file, &mut predictor).unwrap();
     drop(old_file);
-    println!("Used block size: {}", predicted_block_size);
+    info!("Used block size: {}", predicted_block_size);
     let signature_encoded_len = signature_encoded.len();
 
     let server_elapsed = server_start.elapsed();
@@ -102,7 +115,7 @@ async fn sync_main() {
 
     let client_elapsed = client_start.elapsed();
 
-    // println!("Delta: {:?}, len: {} bytes", delta, delta.len());
+    // info!("Delta: {:?}, len: {} bytes", delta, delta.len());
 
     //* END RUNNING CLIENT SIDE
 
@@ -127,7 +140,7 @@ async fn sync_main() {
 
     // compare hashes
     if old_hash == new_hash {
-        println!("Files are identical");
+        info!("Files are identical");
     }
 
     // undo the apply, copy old.txt.bak to old.txt
@@ -142,16 +155,16 @@ async fn sync_main() {
     //? END RUNNING SERVER SIDE
 
     // logging time taken
-    println!(
+    info!(
         "\nServer elapsed: {:?}\nClient elapsed: {:?}",
         server_elapsed, client_elapsed
     );
-    println!("Apply delta elapsed: {:?}", final_elapsed);
-    println!("Common initialization time: {:?}", common_elapsed);
-    println!("\nServer transfered {} bytes", signature_encoded_len);
-    println!("\nClient transfered {} bytes", delta_len + 8);
+    info!("Apply delta elapsed: {:?}", final_elapsed);
+    info!("Common initialization time: {:?}", common_elapsed);
+    info!("\nServer transfered {} bytes", signature_encoded_len);
+    info!("\nClient transfered {} bytes", delta_len + 8);
 
-    println!(
+    info!(
         "\nGiven that the client's file size is {} bytes, we've achieved a **lossless** compression ratio of ~{}x",
         new_file_len,
         compression_rate.round(),

@@ -1,73 +1,107 @@
-use jwalk::{WalkDir, WalkDirGeneric};
+use debounce::EventDebouncer;
+use log::info;
 use notify::{
-    Event, FsEventWatcher, RecursiveMode, Result, Watcher as NotifyWatcher, recommended_watcher,
-};
-use rayon::iter::{IntoParallelRefIterator, ParallelIterator};
-use std::{
-    any,
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex, mpsc},
+    Error, Event, EventKind,
+    event::{DataChange, ModifyKind},
+    recommended_watcher,
 };
 
-use crate::common::config::{
-    SyncConfig,
-    sync::structure::{IgnoreMode, Pattern},
+use std::{
+    ops::{Deref, DerefMut},
+    sync::mpsc,
+    time::{Duration, Instant},
 };
+
+use crate::common::config::SyncConfig;
+
+mod inner;
+mod utils;
+use inner::ImpartialWatcher;
 
 pub struct Watcher {
-    inner: FsEventWatcher,
-    dir: &'static Path,
-    recv: mpsc::Receiver<Result<Event>>,
-    config: &'static SyncConfig,
+    inner: ImpartialWatcher,
+    recv: Receiver,
 }
 
 impl Watcher {
-    pub fn new(config: &'static SyncConfig) -> anyhow::Result<Self> {
-        let (tx, rx) = mpsc::channel::<Result<Event>>();
+    pub async fn new(config: SyncConfig) -> anyhow::Result<Self> {
+        let (tx, rx) = mpsc::channel();
 
         let watcher = recommended_watcher(tx)?;
 
-        let out = Self {
-            inner: watcher,
-            recv: rx,
+        let path = config
+            .path
+            .to_owned() // clone is acceptable but not the best way... easier though
+            .canonicalize()?;
+
+        let parent = path
+            .parent()
+            .ok_or(anyhow::anyhow!("No parent"))?
+            .to_owned();
+
+        let mut inner = ImpartialWatcher {
+            watcher,
             config,
-            dir: config.path.parent().ok_or(anyhow::anyhow!("No parent"))?,
+            path,
+            parent,
+            watching: Vec::new(),
         };
 
-        match &out.config.config.mode {
-            IgnoreMode::Whitelist { whitelist } => out.watch_whitelist(whitelist),
-            IgnoreMode::Blacklist { blacklist } => out.watch_blacklist(blacklist),
-        };
+        let watch_start = Instant::now();
+        inner.watch()?;
+        info!("Watching started in {:?}", watch_start.elapsed());
 
-        Ok(out)
+        Ok(Self { inner, recv: rx })
     }
 
-    pub fn watch_blacklist(&self, patterns: &Vec<Pattern>) {
-        todo!()
-    }
+    pub async fn run(
+        self,
+        func: impl FnMut(Event) + std::marker::Send + 'static,
+    ) -> anyhow::Result<()> {
+        let delay = Duration::from_millis(self.config.debounce);
 
-    pub fn watch_whitelist(&self, patterns: &Vec<Pattern>) -> anyhow::Result<()> {
-        let files_to_watch = WalkDirGeneric::new::<&Path>(self.dir).process_read_dir(
-            |depth, path, read_dir_state, children| {
-                children.retain(|result| {
-                    result
-                        .as_ref()
-                        .map(|entry| {
-                            entry
-                                .file_name
-                                .to_str()
-                                .map(|s| patterns.par_iter().any(|p| p.pattern.matches(s)))
-                                .unwrap_or(false)
-                        })
-                        .unwrap_or(false)
-                });
-            },
-        );
+        let Watcher {
+            inner: mut watcher,
+            recv: rx,
+        } = self;
 
-        for entry in files_to_watch {
-            println!("{:?}", entry);
+        let debouncer = EventDebouncer::new(delay, func);
+        let hot_reload_path = watcher.path.clone();
+        let hot_reload_debouncer = EventDebouncer::new(Duration::from_millis(1000), move |_| {
+            if watcher.config.update() {
+                // only reload if config has changed
+                info!("Hot reloading watcher...");
+                watcher.unwatch_all().unwrap();
+                watcher.watch().unwrap();
+            }
+        });
+
+        while let Ok(Ok(event)) = rx.recv() {
+            if let EventKind::Modify(ModifyKind::Data(DataChange::Content)) = event.kind {
+                if event.paths.contains(&hot_reload_path) {
+                    hot_reload_debouncer.put(());
+                } else {
+                    debouncer.put(event);
+                }
+            }
         }
 
-        todo!()
+        Ok(())
     }
 }
+
+impl Deref for Watcher {
+    type Target = ImpartialWatcher;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl DerefMut for Watcher {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
+pub type Receiver = mpsc::Receiver<core::result::Result<Event, Error>>;

@@ -1,6 +1,6 @@
 use anyhow::bail;
 
-use super::structure::SyncConfigTOML;
+use super::structure::{SyncConfigInner, SyncConfigTOML};
 use std::{
     ops::{Deref, DerefMut},
     path::PathBuf,
@@ -46,6 +46,18 @@ impl SyncConfig {
         &self.cached
     }
 
+    pub fn update(&mut self) -> bool {
+        let new = Self::read(self.path.clone()).unwrap();
+
+        match self.cached.config == new.cached.config {
+            true => false,
+            false => {
+                self.cached = new.cached;
+                true
+            }
+        }
+    }
+
     pub fn as_mut_ref(&mut self) -> &mut SyncConfigTOML {
         &mut self.cached
     }
@@ -77,15 +89,31 @@ impl SyncConfig {
 }
 
 impl Deref for SyncConfig {
-    type Target = SyncConfigTOML;
+    type Target = SyncConfigInner;
 
     fn deref(&self) -> &Self::Target {
-        &self.cached
+        &self.cached.config
     }
 }
 
 impl DerefMut for SyncConfig {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.cached
+        &mut self.cached.config
     }
 }
+
+impl Clone for SyncConfig {
+    fn clone(&self) -> Self {
+        Self {
+            path: self.path.clone(),
+            cached: self.cached.clone(),
+        }
+    }
+}
+
+impl PartialEq for SyncConfig {
+    fn eq(&self, other: &Self) -> bool {
+        self.cached.config == other.cached.config
+    }
+}
+impl Eq for SyncConfig {}

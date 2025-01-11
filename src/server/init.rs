@@ -10,6 +10,7 @@ use crate::data::DatabaseDriver;
 use crate::model::{self, CompressionTree};
 use crate::server::database::ServerDatabase;
 use futures::FutureExt;
+use log::info;
 use tokio::net::TcpListener;
 pub struct Server {
     listener: TcpListener,
@@ -32,7 +33,7 @@ impl Server {
             server_ref.server().port,
         ))
         .await?;
-        println!(
+        info!(
             "Server listening on {}:{}",
             server_ref.server().ip,
             server_ref.server().port
@@ -40,11 +41,11 @@ impl Server {
 
         let mut database = ServerDatabase::new(None).await?;
 
-        println!("Connected to database");
+        info!("Connected to database");
 
         let predictor = model::initialize!(&mut database)?;
 
-        println!("Initialized predictor model");
+        info!("Initialized predictor model");
 
         Ok(Self {
             database,
@@ -81,17 +82,17 @@ impl Server {
         loop {
             match self.accept().await {
                 Ok((stream, addr)) => {
-                    println!("New connection from {}", addr.to_string());
+                    info!("New connection from {}", addr.to_string());
 
                     let handle = tokio::spawn(async move { Client::handle(stream).await });
 
                     match self.insert_client(addr, Client::new(handle.abort_handle())) {
-                        Ok(_) => println!("Client inserted"),
+                        Ok(_) => info!("Client inserted"),
                         Err(e) => {
-                            eprintln!("Client insertion failed: {e}");
+                            log::error!("Client insertion failed: {e}");
                             handle.abort();
-                            println!("{:?}", self.clients.lock().unwrap().len());
-                            println!("Client aborted");
+                            info!("{:?}", self.clients.lock().unwrap().len());
+                            info!("Client aborted");
                             continue;
                         }
                     }
@@ -105,18 +106,18 @@ impl Server {
                         clients.lock().unwrap().remove(&addr).unwrap();
 
                         match result {
-                            Ok(_) => println!("Client disconnected"),
-                            Err(e) => eprintln!("Client disconnected: {e}"),
+                            Ok(_) => info!("Client disconnected"),
+                            Err(e) => log::error!("Client disconnected: {e}"),
                         }
 
                         // print all clients
-                        println!("Clients: {:?}", clients.lock().unwrap().len());
+                        info!("Clients: {:?}", clients.lock().unwrap().len());
                     });
 
                     tokio::spawn(cleanup);
                 }
                 Err(e) => {
-                    eprintln!("Connection failed: {e}");
+                    log::error!("Connection failed: {e}");
                 }
             }
         }
