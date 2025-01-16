@@ -1,11 +1,9 @@
 pub mod macros;
-mod send;
 
 pub(crate) use macros::packet_buffer_mapper;
-pub use send::send_packet;
 
 use super::{
-    Packets,
+    DynamicPacket, Packets, StaticPacket,
     base::PacketBase,
     types::{SanityPacket, SizePacket},
 };

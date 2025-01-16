@@ -12,9 +12,10 @@ use data::DatabaseDriver;
 use log::{LevelFilter, info};
 use server::database::ServerDatabase;
 use std::{env, fs::File};
+use utils::hash::hash_file;
 use utils::log::Logger;
 
-use common::sync::{self, hash_file};
+use common::sync::{self};
 use common::{quick_config, sync::apply_delta};
 
 #[tokio::main]
@@ -30,10 +31,15 @@ async fn main() {
             "client" => client_main().await,
             "watch" => watch_main().await,
             "sync" => sync_main().await,
+            "tray" => tray_main().await,
             _ => panic!("Invalid mode specified"),
         },
         Err(_) => sync_main().await,
     }
+}
+
+async fn tray_main() {
+    todo!();
 }
 
 async fn watch_main() {

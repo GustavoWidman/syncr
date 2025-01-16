@@ -1,12 +1,12 @@
 mod base;
 mod dynamic;
+mod mmap;
 mod r#static;
 mod utils;
 
 pub mod types;
 
 use utils::packet_buffer_mapper;
-use utils::send_packet;
 
 pub use base::PacketBase;
 pub use dynamic::DynamicPacket;
