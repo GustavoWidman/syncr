@@ -6,6 +6,7 @@ mod schema;
 mod server;
 mod utils;
 
+use client::tray::TrayMenu;
 use client::watcher;
 use common::config::SyncConfig;
 use data::DatabaseDriver;
@@ -39,7 +40,23 @@ async fn main() {
 }
 
 async fn tray_main() {
-    todo!();
+    // todo!();
+
+    let handle = tokio::spawn(async move {
+        let tray = TrayMenu::new("./icons/icon.png".into()).unwrap();
+
+        tray.run();
+    });
+
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        println!("Tray menu tick");
+        if handle.is_finished() {
+            break;
+        }
+    }
+
+    println!("Tray menu shutdown");
 }
 
 async fn watch_main() {
@@ -49,7 +66,7 @@ async fn watch_main() {
 
     watcher
         .run(move |event| {
-            info!("{event:?}");
+            info!("{:?}: {:?}", event.paths[0], event.kind);
         })
         .await
         .unwrap();

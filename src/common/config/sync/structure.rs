@@ -36,3 +36,15 @@ impl Default for SyncConfigInner {
 pub struct Pattern {
     pub pattern: String,
 }
+
+impl Into<String> for Pattern {
+    fn into(self) -> String {
+        self.pattern
+    }
+}
+
+impl<'a> Into<&'a str> for &'a Pattern {
+    fn into(self) -> &'a str {
+        self.pattern.as_str()
+    }
+}

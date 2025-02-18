@@ -43,3 +43,8 @@ log = "0.4.24"
 env_logger = "0.11.6"
 io_tee = "0.1.1"
 regex = "1.11.1"
+tray-icon = "0.19.2"
+tao = "0.31.1"
+objc2-core-foundation = "0.3.0"
+image = "0.25.5"
+globset = { version = "0.4.15", features = ["simd-accel"] }

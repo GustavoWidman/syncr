@@ -1,9 +1,9 @@
 [config]
-debounce = 60000
+debounce = 1
 ignore_symlinks = true
 ignore_hidden = false
 max_depth = -1
 syncr_id = "80267f65-25da-4e5d-94d1-d444d68ce5dc"
 
-[[config.patterns]]
-pattern = "*.rs"
+# [[config.patterns]]
+# pattern = "*.rs"
